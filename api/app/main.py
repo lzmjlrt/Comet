@@ -17,6 +17,13 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # 启动：初始化 ES 索引
+    from app.core.rag.es_index import ensure_index
+
+    try:
+        await ensure_index()
+    except Exception as e:
+        logger.warning("ES 索引初始化失败（稍后可重试）: %s", e)
     logger.info("%s 启动完成", settings.app_name)
     yield
     # 关闭：释放长连接 / 连接池

@@ -32,6 +32,13 @@ dependencies = [
     "httpx==0.28.1",
     "aiohttp>=3.13.5",
     "oss2>=2.19.1",
+    "pymupdf>=1.27.2.3",
+    "python-docx>=1.2.0",
+    "markdown>=3.10.2",
+    "beautifulsoup4>=4.14.3",
+    "trafilatura>=2.0.0",
+    "tiktoken>=0.13.0",
+    "chardet>=7.4.3",
 ]
 
 [dependency-groups]
