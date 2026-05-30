@@ -1,0 +1,32 @@
+"""Celery 应用：标准多队列配置（不做自研调度器）。
+
+队列规划：
+- parse    文档解析 / 图片描述
+- memory   记忆三元组萃取 / 去重
+- beat     社区聚类 / 每日回顾（由 beat 定时触发）
+"""
+from celery import Celery
+
+from app.config import settings
+
+celery_app = Celery(
+    "comet",
+    broker=settings.celery_broker_url,
+    backend=settings.celery_result_backend,
+    include=["app.tasks"],
+)
+
+celery_app.conf.update(
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+    timezone="Asia/Shanghai",
+    enable_utc=False,
+    task_track_started=True,
+    task_default_queue="default",
+    task_routes={
+        "app.tasks.parse.*": {"queue": "parse"},
+        "app.tasks.memory.*": {"queue": "memory"},
+        "app.tasks.beat.*": {"queue": "beat"},
+    },
+)

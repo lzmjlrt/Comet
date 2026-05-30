@@ -1,0 +1,34 @@
+import axios from 'axios'
+
+// 统一请求封装：baseURL=/api，返回体 { code, message, data }
+const client = axios.create({
+  baseURL: '/api',
+  timeout: 30000,
+})
+
+// 请求拦截：附带 token（账号体系阶段启用）
+client.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// 响应拦截：解包 { code, message, data }
+client.interceptors.response.use(
+  (resp) => {
+    const body = resp.data
+    if (body && typeof body.code !== 'undefined' && body.code !== 0) {
+      return Promise.reject(new Error(body.message || '请求失败'))
+    }
+    return body
+  },
+  (error) => {
+    const message =
+      error.response?.data?.message || error.message || '网络错误'
+    return Promise.reject(new Error(message))
+  },
+)
+
+export default client
