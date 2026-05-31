@@ -7,6 +7,7 @@ import {
   HddOutlined,
   LogoutOutlined,
   PictureOutlined,
+  RobotOutlined,
   SettingOutlined,
   TagsOutlined,
   UserOutlined,
@@ -26,6 +27,7 @@ const menuItems = [
   { key: '/graph', icon: <DeploymentUnitOutlined />, label: '知识图谱' },
   { key: '/tags', icon: <TagsOutlined />, label: '标签管理' },
   { key: '/settings/models', icon: <SettingOutlined />, label: '模型配置' },
+  { key: '/settings/agent', icon: <RobotOutlined />, label: 'Agent 配置' },
 ]
 
 export default function MainLayout() {

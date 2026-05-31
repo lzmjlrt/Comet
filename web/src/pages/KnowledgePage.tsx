@@ -205,7 +205,7 @@ export default function KnowledgePage() {
   ]
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <div className="fluid-page">
       <Card
         title="知识库"
         extra={

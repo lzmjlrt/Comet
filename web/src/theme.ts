@@ -11,6 +11,8 @@ export const theme: ThemeConfig = {
     colorBgLayout: '#FAFAFA',
     borderRadius: 8,
     fontSize: 16,
+    fontSizeLG: 18,
+    lineHeight: 1.7,
     fontFamily:
       "'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Microsoft YaHei', sans-serif",
     boxShadowSecondary:
@@ -39,6 +41,9 @@ export const theme: ThemeConfig = {
     Button: {
       controlHeight: 40,
       fontWeight: 500,
+    },
+    Input: {
+      fontSize: 16,
     },
   },
 }

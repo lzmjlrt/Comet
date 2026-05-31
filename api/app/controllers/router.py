@@ -6,7 +6,9 @@ conversation / chat / memory / search / favorite / dashboard / task。
 from fastapi import APIRouter
 
 from app.controllers import (
+    agent_config_controller,
     auth_controller,
+    chat_controller,
     document_controller,
     file_controller,
     health_controller,
@@ -25,3 +27,5 @@ api_router.include_router(image_controller.router)
 api_router.include_router(tag_controller.router)
 api_router.include_router(file_controller.router)
 api_router.include_router(memory_controller.router)
+api_router.include_router(chat_controller.router)
+api_router.include_router(agent_config_controller.router)

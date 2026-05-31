@@ -196,7 +196,7 @@ export default function ImagePage() {
   }
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <div className="fluid-page">
       <Card title="图片库">
         <Search
           placeholder="输入关键词检索图片（按 AI 描述/OCR，清空回到浏览）"
