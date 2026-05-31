@@ -13,7 +13,7 @@ celery_app = Celery(
     "comet",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.tasks", "app.tasks.parse", "app.tasks.image"],
+    include=["app.tasks", "app.tasks.parse", "app.tasks.image", "app.tasks.memory"],
 )
 
 celery_app.conf.update(

@@ -5,6 +5,7 @@
 """
 from app.models.document_model import Document
 from app.models.image_model import Image
+from app.models.memory_model import Memory
 from app.models.model_config_model import ModelConfig
 from app.models.tag_model import Tag, document_tags, image_tags
 from app.models.user_model import User
@@ -12,6 +13,7 @@ from app.models.user_model import User
 __all__ = [
     "Document",
     "Image",
+    "Memory",
     "ModelConfig",
     "Tag",
     "document_tags",

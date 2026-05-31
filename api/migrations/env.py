@@ -13,6 +13,7 @@ from app.db.postgres import Base
 from app.models import (  # noqa: F401
     document_model,
     image_model,
+    memory_model,
     model_config_model,
     tag_model,
     user_model,

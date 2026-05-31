@@ -24,6 +24,13 @@ async def lifespan(_: FastAPI):
         await ensure_index()
     except Exception as e:
         logger.warning("ES 索引初始化失败（稍后可重试）: %s", e)
+    # 启动：初始化记忆图谱 schema（约束 + 向量/全文索引）
+    from app.core.memory.graph_schema import ensure_graph_schema
+
+    try:
+        await ensure_graph_schema()
+    except Exception as e:
+        logger.warning("记忆图谱 schema 初始化失败（稍后可重试）: %s", e)
     logger.info("%s 启动完成", settings.app_name)
     yield
     # 关闭：释放长连接 / 连接池
