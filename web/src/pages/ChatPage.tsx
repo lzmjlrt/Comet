@@ -24,6 +24,7 @@ import {
   type ChatMessage,
 } from '@/api/chat'
 import { favoriteApi } from '@/api/favorites'
+import { AuthenticatedImage } from '@/components/AuthenticatedImage'
 import MessageItem from './chat/MessageItem'
 import type { UiMessage } from './chat/types'
 
@@ -360,7 +361,7 @@ export default function ChatPage() {
               <Space wrap style={{ marginBottom: 10 }}>
                 {pendingImages.map((img, i) => (
                   <div key={i} style={{ position: 'relative' }}>
-                    <img
+                    <AuthenticatedImage
                       src={img.url}
                       alt=""
                       style={{ width: 64, height: 64, borderRadius: 10, objectFit: 'cover' }}
