@@ -11,6 +11,7 @@ export interface UiMessage {
   streaming?: boolean
   conversationId?: string // 所属会话（收藏深链用）
   favId?: string | null // 已收藏时的收藏记录 id（高亮+取消用）
+  feedback?: 'up' | 'down' | null // 当前用户对该 AI 消息的反馈
 }
 
 export const TOOL_META: Record<string, { icon: string; label: string }> = {

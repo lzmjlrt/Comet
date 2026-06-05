@@ -13,11 +13,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.agent.orchestrator import run_function_calling, run_react
-from app.core.agent.tools import (
-    build_knowledge_tool,
-    build_memory_tool,
-    build_web_search_tool,
-)
+from app.core.agent.tools import build_enabled_tools
 from app.core.llm.chat_model import (
     build_chat_model,
     build_default_chat_model,
@@ -25,7 +21,6 @@ from app.core.llm.chat_model import (
     supports_function_call,
 )
 from app.core.logging import get_logger
-from app.core.security import decrypt_secret
 from app.core.storage import get_storage
 from app.models.agent_config_model import AgentConfig
 from app.models.conversation_model import (
@@ -39,7 +34,6 @@ from app.repositories.conversation_repository import (
     ConversationRepository,
     MessageRepository,
 )
-from app.repositories.model_config_repository import ModelConfigRepository
 from app.schemas.chat_schema import ChatStreamRequest
 
 logger = get_logger(__name__)
@@ -79,16 +73,6 @@ class ChatService:
                 out.append(AIMessage(content=m.content))
         return out
 
-    async def _get_websearch_config(self, user_id: uuid.UUID):
-        """取用户默认 websearch 配置（provider + 解密 key）；无则返回 None。"""
-        configs = await ModelConfigRepository(self.session).list_by_user(
-            user_id, "websearch"
-        )
-        if not configs:
-            return None
-        cfg = next((c for c in configs if c.is_default), configs[0])
-        return cfg.provider, decrypt_secret(cfg.api_key_encrypted)
-
     async def _build_tools(
         self,
         user_id: uuid.UUID,
@@ -96,7 +80,11 @@ class ChatService:
         body: ChatStreamRequest,
         citations: list[dict],
     ) -> list:
-        """按 agent 默认开关 + 本轮覆盖，构建启用的工具列表。"""
+        """按 agent 默认开关 + 本轮覆盖，构建启用的工具列表。
+
+        三个核心工具（知识库/记忆/联网）沿用 agent 配置默认 + 本轮 body 覆盖；
+        其余内置工具（时间等）及 MCP 工具由用户 tool_configs 持久启停决定。
+        """
 
         def enabled(override: bool | None, default: bool) -> bool:
             return default if override is None else override
@@ -105,23 +93,16 @@ class ChatService:
         a_mem = agent.enable_memory if agent else True
         a_web = agent.enable_web_search if agent else False
 
-        embed_holder: dict = {}
-        tools: list = []
-        if enabled(body.enable_knowledge, a_know):
-            tools.append(
-                build_knowledge_tool(self.session, user_id, citations, embed_holder)
-            )
-        if enabled(body.enable_memory, a_mem):
-            tools.append(build_memory_tool(self.session, user_id, embed_holder))
-        if enabled(body.enable_web_search, a_web):
-            ws = await self._get_websearch_config(user_id)
-            if ws:
-                provider, key = ws
-                tools.append(build_web_search_tool(provider, key))
-        return tools
+        # 核心三工具的最终启停作为本轮 overrides，保证与既有行为一致
+        overrides = {
+            "knowledge_search": enabled(body.enable_knowledge, a_know),
+            "memory_search": enabled(body.enable_memory, a_mem),
+            "web_search": enabled(body.enable_web_search, a_web),
+        }
+        return await build_enabled_tools(self.session, user_id, citations, overrides)
 
     async def stream_chat(
-        self, user_id: uuid.UUID, body: ChatStreamRequest
+        self, user_id: uuid.UUID, body: ChatStreamRequest, skip_user_message: bool = False
     ) -> AsyncGenerator[str, None]:
         user_text = body.message.strip()
         try:
@@ -131,9 +112,10 @@ class ChatService:
             return
 
         yield _sse("meta", {"conversation_id": str(conv.id), "title": conv.title})
-        await self.msg_repo.add(
-            Message(conversation_id=conv.id, role=ROLE_USER, content=user_text)
-        )
+        if not skip_user_message:
+            await self.msg_repo.add(
+                Message(conversation_id=conv.id, role=ROLE_USER, content=user_text)
+            )
 
         try:
             agent = await self.agent_repo.get_by_user(user_id)
@@ -301,6 +283,92 @@ class ChatService:
             extract_memory_task.delay(str(memory.id))
         except Exception as e:
             logger.warning("对话记忆萃取派发失败（忽略）: %s", e)
+
+    # ── 消息反馈 / 重新生成 ──
+
+    async def set_feedback(
+        self,
+        user_id: uuid.UUID,
+        message_id: uuid.UUID,
+        rating: str,
+        comment: str | None = None,
+    ) -> dict:
+        """对某条 AI 回复点赞/踩（幂等，可切换）。校验消息归属当前用户。"""
+        from app.core.exceptions import BizError
+        from app.repositories.message_feedback_repository import (
+            MessageFeedbackRepository,
+        )
+
+        msg = await self.msg_repo.get(message_id)
+        if not msg:
+            raise BizError("消息不存在", code=4010, status_code=404)
+        conv = await self.conv_repo.get(user_id, msg.conversation_id)
+        if not conv:
+            raise BizError("无权操作该消息", code=4011, status_code=403)
+        fb = await MessageFeedbackRepository(self.session).upsert(
+            user_id, message_id, msg.conversation_id, rating, comment
+        )
+        return {"id": str(fb.id), "rating": fb.rating}
+
+    async def remove_feedback(
+        self, user_id: uuid.UUID, message_id: uuid.UUID
+    ) -> None:
+        """取消对某条 AI 回复的反馈。"""
+        from app.repositories.message_feedback_repository import (
+            MessageFeedbackRepository,
+        )
+
+        await MessageFeedbackRepository(self.session).remove(user_id, message_id)
+
+    async def regenerate(
+        self, user_id: uuid.UUID, message_id: uuid.UUID
+    ) -> AsyncGenerator[str, None]:
+        """重新生成某条 AI 回复：删掉该回复，用它前面的上文重新流式作答。
+
+        约束：只能重新生成 assistant 消息；其前一条 user 消息作为本轮问题。
+        """
+        from app.core.exceptions import BizError
+        from app.models.conversation_model import ROLE_ASSISTANT, ROLE_USER
+
+        target = await self.msg_repo.get(message_id)
+        if not target or target.role != ROLE_ASSISTANT:
+            yield _sse("error", {"message": "只能重新生成 AI 回复"})
+            return
+        conv = await self.conv_repo.get(user_id, target.conversation_id)
+        if not conv:
+            yield _sse("error", {"message": "无权操作该消息"})
+            return
+
+        # 找到该 assistant 消息之前最近的一条 user 消息作为问题
+        all_msgs = await self.msg_repo.list_by_conversation(conv.id)
+        idx = next((i for i, m in enumerate(all_msgs) if m.id == message_id), -1)
+        if idx <= 0:
+            yield _sse("error", {"message": "找不到对应的提问"})
+            return
+        user_msg = None
+        for i in range(idx - 1, -1, -1):
+            if all_msgs[i].role == ROLE_USER:
+                user_msg = all_msgs[i]
+                break
+        if user_msg is None:
+            yield _sse("error", {"message": "找不到对应的提问"})
+            return
+
+        # 删除旧的 assistant 回复（及其反馈随级联删除），重新走问答
+        try:
+            await self.msg_repo.delete(target)
+        except BizError:
+            raise
+        except Exception as e:
+            yield _sse("error", {"message": f"重新生成失败：{e}"})
+            return
+
+        body = ChatStreamRequest(
+            conversation_id=conv.id, message=user_msg.content
+        )
+        # 复用流式问答；但用户消息已存在，这里跳过再次落 user 消息
+        async for chunk in self.stream_chat(user_id, body, skip_user_message=True):
+            yield chunk
 
 
 __all__ = ["ChatService"]

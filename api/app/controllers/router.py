@@ -19,6 +19,7 @@ from app.controllers import (
     model_config_controller,
     search_controller,
     tag_controller,
+    tool_controller,
 )
 
 api_router = APIRouter(prefix="/api")
@@ -32,6 +33,7 @@ api_router.include_router(file_controller.router)
 api_router.include_router(memory_controller.router)
 api_router.include_router(chat_controller.router)
 api_router.include_router(agent_config_controller.router)
+api_router.include_router(tool_controller.router)
 api_router.include_router(search_controller.router)
 api_router.include_router(favorite_controller.router)
 api_router.include_router(dashboard_controller.router)

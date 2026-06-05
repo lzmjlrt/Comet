@@ -18,8 +18,10 @@ from app.models import (  # noqa: F401
     favorite_model,
     image_model,
     memory_model,
+    message_feedback_model,
     model_config_model,
     tag_model,
+    tool_config_model,
     user_model,
 )
 

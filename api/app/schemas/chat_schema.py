@@ -23,3 +23,10 @@ class ChatStreamRequest(BaseModel):
     enable_knowledge: bool | None = None
     enable_memory: bool | None = None
     enable_web_search: bool | None = None
+
+
+class FeedbackRequest(BaseModel):
+    """对 AI 回复的赞/踩反馈。"""
+
+    rating: str = Field(..., pattern="^(up|down)$")
+    comment: str | None = Field(default=None, max_length=1000)

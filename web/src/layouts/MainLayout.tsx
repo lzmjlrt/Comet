@@ -12,6 +12,7 @@ import {
   SettingOutlined,
   StarOutlined,
   TagsOutlined,
+  ToolOutlined,
   UserOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -55,6 +56,7 @@ const menuItems = [
     children: [
       { key: '/settings/models', icon: <SettingOutlined />, label: '模型配置' },
       { key: '/settings/agent', icon: <RobotOutlined />, label: 'Agent 配置' },
+      { key: '/settings/tools', icon: <ToolOutlined />, label: '工具配置' },
     ],
   },
 ]

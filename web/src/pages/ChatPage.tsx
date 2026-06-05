@@ -20,6 +20,7 @@ import {
 import {
   chatApi,
   streamChat,
+  regenerateMessage,
   type Conversation,
   type ChatMessage,
 } from '@/api/chat'
@@ -101,6 +102,7 @@ export default function ChatPage() {
           toolCalls: m.meta_data?.tool_calls,
           conversationId: id,
           favId: favByMsg[m.id] ?? null,
+          feedback: m.feedback ?? null,
         })),
       )
       if (focusMessageId) {
@@ -122,6 +124,57 @@ export default function ChatPage() {
   const newConversation = () => {
     setActiveId(undefined)
     setMessages([])
+  }
+
+  // 重新生成某条 AI 回复：替换该条消息内容，重新流式
+  const onRegenerate = async (target: UiMessage) => {
+    if (sending) return
+    setSending(true)
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === target.id
+          ? { ...m, content: '', toolCalls: [], citations: undefined, streaming: true, feedback: null }
+          : m,
+      ),
+    )
+    const aiId = target.id
+    await regenerateMessage(aiId, {
+      onToken: (t) => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === aiId ? { ...m, content: m.content + t } : m)),
+        )
+      },
+      onToolCall: (tc) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiId ? { ...m, toolCalls: [...(m.toolCalls ?? []), tc] } : m,
+          ),
+        )
+      },
+      onCitation: (cites) => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === aiId ? { ...m, citations: cites } : m)),
+        )
+      },
+      onDone: (d) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiId
+              ? { ...m, streaming: false, id: d.message_id ?? m.id }
+              : m,
+          ),
+        )
+        setSending(false)
+      },
+      onError: (msg) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiId ? { ...m, content: `⚠️ ${msg}`, streaming: false } : m,
+          ),
+        )
+        setSending(false)
+      },
+    })
   }
 
   const onDeleteConversation = async (id: string) => {
@@ -358,7 +411,7 @@ export default function ChatPage() {
                     background: highlightId === m.id ? '#FFF7E6' : 'transparent',
                   }}
                 >
-                  <MessageItem msg={m} />
+                  <MessageItem msg={m} onRegenerate={onRegenerate} />
                 </div>
               ))}
             </div>

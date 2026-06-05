@@ -10,8 +10,10 @@ from app.models.document_model import Document
 from app.models.favorite_model import Favorite
 from app.models.image_model import Image
 from app.models.memory_model import Memory
+from app.models.message_feedback_model import MessageFeedback
 from app.models.model_config_model import ModelConfig
 from app.models.tag_model import Tag, document_tags, image_tags
+from app.models.tool_config_model import ToolConfig
 from app.models.user_model import User
 
 __all__ = [
@@ -23,9 +25,11 @@ __all__ = [
     "Favorite",
     "Image",
     "Memory",
+    "MessageFeedback",
     "ModelConfig",
     "Tag",
     "document_tags",
     "image_tags",
+    "ToolConfig",
     "User",
 ]
