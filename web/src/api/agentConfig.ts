@@ -21,4 +21,10 @@ export const agentConfigApi = {
   update(body: Partial<AgentConfig>) {
     return client.put<unknown, Wrapped<AgentConfig>>('/agent-config', body)
   },
+  optimizePrompt(systemPrompt: string) {
+    return client.post<unknown, Wrapped<{ optimized: string }>>(
+      '/agent-config/optimize-prompt',
+      { system_prompt: systemPrompt },
+    )
+  },
 }
