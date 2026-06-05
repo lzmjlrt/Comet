@@ -4,7 +4,7 @@
 """
 import uuid
 
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import BaseTool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.core.agent.tools.builtin  # noqa: F401  触发内置工具注册
@@ -30,7 +30,7 @@ async def build_enabled_tools(
     user_id: uuid.UUID,
     citations: list[dict],
     overrides: dict[str, bool] | None = None,
-) -> list[StructuredTool]:
+) -> list[BaseTool]:
     """构建用户当前启用的工具列表（内置 + MCP）。
 
     overrides: {tool_key: bool} 本轮临时开关（对话请求传入），优先级最高。
@@ -43,7 +43,7 @@ async def build_enabled_tools(
         session=session, user_id=user_id, citations=citations, embed_holder=embed_holder
     )
 
-    tools: list[StructuredTool] = []
+    tools: list[BaseTool] = []
     for key, spec in BUILTIN_REGISTRY.items():
         on = overrides.get(key, enabled.get(key, spec.default_enabled))
         if not on:

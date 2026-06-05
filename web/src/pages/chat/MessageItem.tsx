@@ -15,7 +15,7 @@ import { favoriteApi } from '@/api/favorites'
 import { chatApi } from '@/api/chat'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
 import type { UiMessage } from './types'
-import { TOOL_META } from './types'
+import { resolveToolMeta } from './types'
 
 export default function MessageItem({
   msg,
@@ -92,7 +92,7 @@ export default function MessageItem({
         {!isUser && msg.toolCalls && msg.toolCalls.length > 0 && (
           <Space size={[4, 4]} wrap style={{ marginBottom: 8 }}>
             {msg.toolCalls.map((tc, i) => {
-              const meta = TOOL_META[tc.tool] ?? { icon: '🛠️', label: tc.tool }
+              const meta = resolveToolMeta(tc.tool)
               return (
                 <Tooltip key={i} title={tc.query}>
                   <Tag color="blue" style={{ borderRadius: 12, fontSize: 13, padding: '2px 10px' }}>

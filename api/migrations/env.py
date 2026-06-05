@@ -17,6 +17,7 @@ from app.models import (  # noqa: F401
     document_model,
     favorite_model,
     image_model,
+    mcp_server_model,
     memory_model,
     message_feedback_model,
     model_config_model,

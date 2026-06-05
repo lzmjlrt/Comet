@@ -19,3 +19,17 @@ export const TOOL_META: Record<string, { icon: string; label: string }> = {
   memory_search: { icon: '🧠', label: '记忆' },
   web_search: { icon: '🌐', label: '联网' },
 }
+
+// 解析工具调用标记的展示信息。
+// 内置工具走 TOOL_META；MCP 工具名形如 `{server}__{tool}`，拆成「服务·工具」友好展示。
+export function resolveToolMeta(toolName: string): { icon: string; label: string } {
+  const builtin = TOOL_META[toolName]
+  if (builtin) return builtin
+  if (toolName.includes('__')) {
+    const idx = toolName.indexOf('__')
+    const server = toolName.slice(0, idx)
+    const tool = toolName.slice(idx + 2)
+    return { icon: '🧩', label: `MCP · ${server} / ${tool}` }
+  }
+  return { icon: '🛠️', label: toolName }
+}

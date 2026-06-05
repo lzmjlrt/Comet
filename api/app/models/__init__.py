@@ -9,6 +9,7 @@ from app.models.daily_review_model import DailyReview
 from app.models.document_model import Document
 from app.models.favorite_model import Favorite
 from app.models.image_model import Image
+from app.models.mcp_server_model import MCPServer
 from app.models.memory_model import Memory
 from app.models.message_feedback_model import MessageFeedback
 from app.models.model_config_model import ModelConfig
@@ -24,6 +25,7 @@ __all__ = [
     "Document",
     "Favorite",
     "Image",
+    "MCPServer",
     "Memory",
     "MessageFeedback",
     "ModelConfig",
