@@ -14,6 +14,7 @@ from app.schemas.chat_schema import (
     ChatStreamRequest,
     ConversationCreateRequest,
     ConversationRenameRequest,
+    FeedbackRequest,
 )
 from app.services.chat_service import ChatService
 from app.services.conversation_service import ConversationService
@@ -111,3 +112,49 @@ async def upload_chat_image(
     storage = get_storage()
     await storage.save(file_key, content)
     return success({"file_key": file_key, "url": storage.get_url(file_key)})
+
+
+# ── 消息反馈 / 重新生成 ──
+
+@router.post("/chat/messages/{message_id}/feedback")
+async def set_message_feedback(
+    message_id: uuid.UUID,
+    body: FeedbackRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """对某条 AI 回复点赞/踩（幂等，可切换）。"""
+    data = await ChatService(session).set_feedback(
+        user.id, message_id, body.rating, body.comment
+    )
+    return success(data, "已反馈")
+
+
+@router.delete("/chat/messages/{message_id}/feedback")
+async def remove_message_feedback(
+    message_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """取消对某条 AI 回复的反馈。"""
+    await ChatService(session).remove_feedback(user.id, message_id)
+    return success(message="已取消反馈")
+
+
+@router.post("/chat/messages/{message_id}/regenerate")
+async def regenerate_message(
+    message_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """重新生成某条 AI 回复（SSE 流式，复用问答管线）。"""
+    service = ChatService(session)
+    return StreamingResponse(
+        service.regenerate(user.id, message_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

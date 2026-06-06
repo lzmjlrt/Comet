@@ -86,6 +86,18 @@ class Settings(BaseSettings):
     global_search_min_vector_score: float = 0.45
     memory_search_min_vector_score: float = 0.45
 
+    # 情绪记忆：对话后情绪分析强度阈值（低于此值的弱情绪丢弃，不入库）
+    emotion_min_intensity: float = 0.15
+    # 当前情绪画像聚合窗口：取最近 N 条情绪记录做平均
+    emotion_profile_window: int = 20
+
+    # 记忆巩固（短期→长期提升，只升不降）
+    consolidate_min_access: int = 2  # 被检索复用次数达标即提升
+    consolidate_min_importance: float = 0.7  # 重要度达标即提升
+    consolidate_min_mention: int = 3  # 提及次数达标即提升
+    consolidate_min_age_hours: int = 24  # 凭提及次数提升需存在满 N 小时
+    consolidate_profile_top_k: int = 5  # 每次巩固对 top-K 高频实体做画像增强
+
     @property
     def database_url(self) -> str:
         return (

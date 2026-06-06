@@ -19,6 +19,7 @@ celery_app = Celery(
         "app.tasks.parse",
         "app.tasks.image",
         "app.tasks.memory",
+        "app.tasks.emotion",
         "app.tasks.beat",
     ],
 )
@@ -35,6 +36,7 @@ celery_app.conf.update(
         "app.tasks.parse.*": {"queue": "parse"},
         "app.tasks.image.*": {"queue": "parse"},
         "app.tasks.memory.*": {"queue": "memory"},
+        "app.tasks.emotion.*": {"queue": "memory"},
         "app.tasks.beat.*": {"queue": "beat"},
     },
     # Celery beat 定时
@@ -46,6 +48,10 @@ celery_app.conf.update(
         "cluster-communities": {
             "task": "app.tasks.beat.cluster_communities",
             "schedule": crontab(hour=3, minute=0),  # 每天凌晨 3:00 全量聚类兜底
+        },
+        "consolidate-memory": {
+            "task": "app.tasks.beat.consolidate_memory",
+            "schedule": crontab(hour=4, minute=0),  # 每天凌晨 4:00 记忆巩固
         },
     },
 )

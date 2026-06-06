@@ -10,3 +10,15 @@ class AgentConfigUpdate(BaseModel):
     enable_knowledge: bool | None = None
     enable_memory: bool | None = None
     enable_web_search: bool | None = None
+
+
+class OptimizePromptRequest(BaseModel):
+    """提示词优化入参。"""
+
+    system_prompt: str = Field(min_length=1, max_length=4000)
+
+
+class OptimizePromptResult(BaseModel):
+    """提示词优化结果。"""
+
+    optimized: str

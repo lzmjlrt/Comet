@@ -47,12 +47,22 @@ class ConversationService:
     ) -> list[dict]:
         await self.get_owned(user_id, conv_id)
         messages = await self.msg_repo.list_by_conversation(conv_id)
+        # 带上当前用户对各消息的反馈（赞/踩），供前端高亮
+        from app.repositories.message_feedback_repository import (
+            MessageFeedbackRepository,
+        )
+
+        feedbacks = await MessageFeedbackRepository(self.session).list_by_conversation(
+            user_id, conv_id
+        )
+        rating_by_msg = {str(f.message_id): f.rating for f in feedbacks}
         return [
             {
                 "id": str(m.id),
                 "role": m.role,
                 "content": m.content,
                 "meta_data": m.meta_data,
+                "feedback": rating_by_msg.get(str(m.id)),
                 "created_at": m.created_at.isoformat() if m.created_at else None,
             }
             for m in messages

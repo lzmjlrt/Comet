@@ -1,17 +1,35 @@
 import { useState } from 'react'
 import { Button, Space, Tag, Tooltip, message as antdMessage } from 'antd'
-import { CopyOutlined, StarFilled, StarOutlined } from '@ant-design/icons'
+import {
+  CopyOutlined,
+  DislikeFilled,
+  DislikeOutlined,
+  LikeFilled,
+  LikeOutlined,
+  ReloadOutlined,
+  StarFilled,
+  StarOutlined,
+} from '@ant-design/icons'
 import MarkdownMessage from '@/components/MarkdownMessage'
 import { favoriteApi } from '@/api/favorites'
+import { chatApi } from '@/api/chat'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
 import type { UiMessage } from './types'
-import { TOOL_META } from './types'
+import { resolveToolMeta } from './types'
 
-export default function MessageItem({ msg }: { msg: UiMessage }) {
+export default function MessageItem({
+  msg,
+  onRegenerate,
+}: {
+  msg: UiMessage
+  onRegenerate?: (msg: UiMessage) => void
+}) {
   const isUser = msg.role === 'user'
   // 本地收藏态：null 未收藏；string 已收藏（存 favorite id 供取消）
   const [favId, setFavId] = useState<string | null>(msg.favId ?? null)
   const [favLoading, setFavLoading] = useState(false)
+  // 本地反馈态：up | down | null
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(msg.feedback ?? null)
 
   const onCopy = async () => {
     try {
@@ -19,6 +37,21 @@ export default function MessageItem({ msg }: { msg: UiMessage }) {
       antdMessage.success('已复制')
     } catch {
       antdMessage.error('复制失败')
+    }
+  }
+
+  const onFeedback = async (rating: 'up' | 'down') => {
+    try {
+      if (feedback === rating) {
+        // 再次点击同一个 → 取消
+        await chatApi.removeFeedback(msg.id)
+        setFeedback(null)
+      } else {
+        await chatApi.setFeedback(msg.id, rating)
+        setFeedback(rating)
+      }
+    } catch (e) {
+      antdMessage.error((e as Error).message)
     }
   }
 
@@ -59,7 +92,7 @@ export default function MessageItem({ msg }: { msg: UiMessage }) {
         {!isUser && msg.toolCalls && msg.toolCalls.length > 0 && (
           <Space size={[4, 4]} wrap style={{ marginBottom: 8 }}>
             {msg.toolCalls.map((tc, i) => {
-              const meta = TOOL_META[tc.tool] ?? { icon: '🛠️', label: tc.tool }
+              const meta = resolveToolMeta(tc.tool)
               return (
                 <Tooltip key={i} title={tc.query}>
                   <Tag color="blue" style={{ borderRadius: 12, fontSize: 13, padding: '2px 10px' }}>
@@ -151,6 +184,35 @@ export default function MessageItem({ msg }: { msg: UiMessage }) {
                 >
                   {favId ? '已收藏' : '收藏'}
                 </Button>
+                <Tooltip title="赞">
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={feedback === 'up' ? <LikeFilled style={{ color: '#155EEF' }} /> : <LikeOutlined />}
+                    onClick={() => onFeedback('up')}
+                    style={{ color: feedback === 'up' ? '#155EEF' : '#667085', fontSize: 12 }}
+                  />
+                </Tooltip>
+                <Tooltip title="踩">
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={feedback === 'down' ? <DislikeFilled style={{ color: '#FF5D34' }} /> : <DislikeOutlined />}
+                    onClick={() => onFeedback('down')}
+                    style={{ color: feedback === 'down' ? '#FF5D34' : '#667085', fontSize: 12 }}
+                  />
+                </Tooltip>
+                {onRegenerate && (
+                  <Tooltip title="重新生成">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<ReloadOutlined />}
+                      onClick={() => onRegenerate(msg)}
+                      style={{ color: '#667085', fontSize: 12 }}
+                    />
+                  </Tooltip>
+                )}
               </>
             )}
           </div>

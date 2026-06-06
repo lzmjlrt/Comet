@@ -8,6 +8,60 @@ function shouldFetchWithAuth(src?: string) {
   return !!src && src.startsWith('/api/files/')
 }
 
+// ── 模块级 blob URL 缓存（带引用计数）──
+// 同一个 src 只 fetch 一次，多个组件共享同一个 object URL；
+// 用引用计数管理生命周期，最后一个使用者卸载时才释放，避免重复请求与误释放。
+interface CacheEntry {
+  promise: Promise<string> // 解析为 object URL
+  url?: string // fetch 完成后的 object URL
+  refs: number // 当前使用该 URL 的组件数
+}
+
+const blobCache = new Map<string, CacheEntry>()
+
+function acquire(src: string): Promise<string> {
+  let entry = blobCache.get(src)
+  if (!entry) {
+    const promise = (async () => {
+      const token = localStorage.getItem('access_token')
+      const headers: Record<string, string> = token
+        ? { Authorization: `Bearer ${token}` }
+        : {}
+      const resp = await fetch(src, { headers })
+      if (!resp.ok) {
+        throw new Error(`图片加载失败: ${resp.status}`)
+      }
+      const blob = await resp.blob()
+      const url = URL.createObjectURL(blob)
+      const cur = blobCache.get(src)
+      if (cur && cur.refs > 0) {
+        cur.url = url
+      } else {
+        // fetch 期间使用者已全部卸载：立即释放，避免泄漏
+        URL.revokeObjectURL(url)
+        blobCache.delete(src)
+      }
+      return url
+    })()
+    entry = { promise, refs: 0 }
+    blobCache.set(src, entry)
+  }
+  entry.refs += 1
+  return entry.promise
+}
+
+function release(src: string) {
+  const entry = blobCache.get(src)
+  if (!entry) return
+  entry.refs -= 1
+  if (entry.refs <= 0) {
+    if (entry.url) {
+      URL.revokeObjectURL(entry.url)
+    }
+    blobCache.delete(src)
+  }
+}
+
 function useAuthenticatedImageUrl(src?: string) {
   const [resolvedSrc, setResolvedSrc] = useState(src)
 
@@ -17,42 +71,18 @@ function useAuthenticatedImageUrl(src?: string) {
       return
     }
 
-    const controller = new AbortController()
-    let objectUrl: string | null = null
-    const imageSrc = src
-
-    async function load() {
-      const token = localStorage.getItem('access_token')
-      if (!token) {
-        setResolvedSrc(imageSrc)
-        return
-      }
-
-      try {
-        const resp = await fetch(imageSrc, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal,
-        })
-        if (!resp.ok) {
-          throw new Error(`图片加载失败: ${resp.status}`)
-        }
-        const blob = await resp.blob()
-        objectUrl = URL.createObjectURL(blob)
-        setResolvedSrc(objectUrl)
-      } catch {
-        if (!controller.signal.aborted) {
-          setResolvedSrc(imageSrc)
-        }
-      }
-    }
-
-    load()
+    let active = true
+    acquire(src)
+      .then((url) => {
+        if (active) setResolvedSrc(url)
+      })
+      .catch(() => {
+        if (active) setResolvedSrc(src) // 失败回退原始 URL
+      })
 
     return () => {
-      controller.abort()
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl)
-      }
+      active = false
+      release(src)
     }
   }, [src])
 

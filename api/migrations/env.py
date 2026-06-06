@@ -15,11 +15,15 @@ from app.models import (  # noqa: F401
     conversation_model,
     daily_review_model,
     document_model,
+    emotion_model,
     favorite_model,
     image_model,
+    mcp_server_model,
     memory_model,
+    message_feedback_model,
     model_config_model,
     tag_model,
+    tool_config_model,
     user_model,
 )
 

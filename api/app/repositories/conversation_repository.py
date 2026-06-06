@@ -66,6 +66,16 @@ class MessageRepository:
         await self.session.refresh(message)
         return message
 
+    async def get(self, message_id: uuid.UUID) -> Message | None:
+        result = await self.session.execute(
+            select(Message).where(Message.id == message_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def delete(self, message: Message) -> None:
+        await self.session.delete(message)
+        await self.session.commit()
+
     async def list_by_conversation(
         self, conv_id: uuid.UUID, limit: int | None = None
     ) -> list[Message]:

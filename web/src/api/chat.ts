@@ -30,6 +30,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   meta_data: { citations?: Citation[]; tool_calls?: ToolCall[] } | null
+  feedback?: 'up' | 'down' | null
   created_at: string
 }
 
@@ -77,6 +78,15 @@ export const chatApi = {
       { headers: { 'Content-Type': 'multipart/form-data' } },
     )
   },
+  setFeedback(messageId: string, rating: 'up' | 'down') {
+    return client.post<unknown, Wrapped<{ id: string; rating: string }>>(
+      `/chat/messages/${messageId}/feedback`,
+      { rating },
+    )
+  },
+  removeFeedback(messageId: string) {
+    return client.delete<unknown, Wrapped<null>>(`/chat/messages/${messageId}/feedback`)
+  },
 }
 
 // SSE 流式发送：用 fetch + ReadableStream 解析 text/event-stream
@@ -85,21 +95,45 @@ export async function streamChat(
   handlers: StreamHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
-  const token = localStorage.getItem('access_token')
-  const resp = await fetch('/api/chat/stream', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({
+  await streamSSE(
+    '/api/chat/stream',
+    {
       conversation_id: opts.conversationId ?? null,
       message: opts.message,
       image_keys: opts.imageKeys ?? [],
       enable_knowledge: opts.enableKnowledge ?? null,
       enable_memory: opts.enableMemory ?? null,
       enable_web_search: opts.enableWebSearch ?? null,
-    }),
+    },
+    handlers,
+    signal,
+  )
+}
+
+// 重新生成某条 AI 回复（复用 SSE 解析）
+export async function regenerateMessage(
+  messageId: string,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  await streamSSE(`/api/chat/messages/${messageId}/regenerate`, {}, handlers, signal)
+}
+
+// 通用 SSE POST 解析
+async function streamSSE(
+  url: string,
+  body: Record<string, unknown>,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const token = localStorage.getItem('access_token')
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
     signal,
   })
 
