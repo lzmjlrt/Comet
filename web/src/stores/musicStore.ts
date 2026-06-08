@@ -82,25 +82,44 @@ async function resolveTrack(t: PlayerTrack): Promise<PlayerTrack> {
 }
 
 export const useMusicStore = create<MusicState>((set, get) => {
-  // 从 startIndex 朝 dir 方向找到第一首能播的歌（现取验证），最多遍历整个队列
+  // 当前进行中的切歌令牌（模块内可变，用于作废过期的异步解析）
+  let pendingToken: symbol | null = null
+  // 从 startIndex 朝 dir 方向找到第一首能播的歌（先静默验证音源，确认能播再切 UI，
+  // 避免把没音源的歌闪现出来又跳走）
   const playFrom = async (startIndex: number, dir: 1 | -1) => {
     const { playlist } = get()
     const n = playlist.length
     if (n === 0) return
+    // 本次切歌令牌：解析期间用户又切歌则本次作废
+    const token = Symbol('playFrom')
+    pendingToken = token
+    set({ resolving: true })
     for (let step = 0; step < n; step++) {
       const idx = ((startIndex + dir * step) % n + n) % n
       const base = playlist[idx]
-      // 先切到该首（展示），标记取源中
-      set({ index: idx, track: base, playing: false, resolving: true })
+      // 已有直链：直接可播，立即切过去
+      if (base.url) {
+        if (pendingToken !== token) return
+        set({ index: idx, track: base, playing: true, resolving: false })
+        void musicApi
+          .recordPlay({ song_id: base.id, title: base.title, artist: base.artist })
+          .catch(() => {})
+        return
+      }
+      // 无直链：静默现取，不先切 UI
       const resolved = await resolveTrack(base)
-      // 解析期间用户可能又切了歌：确认仍停在这首再处理
-      if (get().index !== idx) return
-      // 把解析结果写回队列与当前
+      if (pendingToken !== token) return // 期间用户又切了，作废
+      // 解析结果写回队列缓存
       const list = [...get().playlist]
       list[idx] = resolved
       if (resolved.playable && resolved.url) {
-        set({ playlist: list, track: resolved, playing: true, resolving: false })
-        // 上报播放历史（供每日回顾汇总；失败静默）
+        set({
+          playlist: list,
+          index: idx,
+          track: resolved,
+          playing: true,
+          resolving: false,
+        })
         void musicApi
           .recordPlay({
             song_id: resolved.id,
@@ -110,11 +129,13 @@ export const useMusicStore = create<MusicState>((set, get) => {
           .catch(() => {})
         return
       }
-      // 这首没音源，继续找下一首；最后一轮则停在这并提示无音源
-      set({ playlist: list, track: resolved })
+      // 这首没音源：仅更新缓存，不切 UI，继续找下一首
+      set({ playlist: list })
     }
-    // 整个队列都没有可播的
-    set({ playing: false, resolving: false })
+    // 整个队列都没有可播的：停在起点并停止
+    if (pendingToken !== token) return
+    const idx = ((startIndex % n) + n) % n
+    set({ index: idx, track: get().playlist[idx], playing: false, resolving: false })
   }
 
   return {
