@@ -25,6 +25,14 @@ export interface ToolCall {
   query: string
 }
 
+export type ToolRunStatus = 'running' | 'success' | 'error'
+
+export interface ToolRun extends ToolCall {
+  id: string
+  status: ToolRunStatus
+  result?: string
+}
+
 export interface ChatAttachment {
   file_name: string
   text: string
@@ -57,6 +65,9 @@ export interface SendOptions {
 export interface StreamHandlers {
   onMeta?: (d: { conversation_id: string; title: string }) => void
   onToken?: (text: string) => void
+  onThought?: (text: string) => void
+  onToolStart?: (d: ToolCall) => void
+  onToolResult?: (d: ToolCall & { status?: ToolRunStatus; text?: string }) => void
   onToolCall?: (d: ToolCall) => void
   onCitation?: (citations: Citation[]) => void
   onDone?: (d: { conversation_id: string; message_id?: string }) => void
@@ -206,7 +217,17 @@ function dispatchEvent(
     case 'token':
       handlers.onToken?.(payload.text as string)
       break
+    case 'thought':
+      handlers.onThought?.(payload.text as string)
+      break
+    case 'tool_start':
+      handlers.onToolStart?.(payload as never)
+      break
+    case 'tool_result':
+      handlers.onToolResult?.(payload as never)
+      break
     case 'tool_call':
+      handlers.onToolStart?.(payload as never)
       handlers.onToolCall?.(payload as never)
       break
     case 'citation':

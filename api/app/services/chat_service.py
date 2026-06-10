@@ -257,7 +257,7 @@ class ChatService:
         """累积文本与工具调用记录。"""
         if ev["type"] == "token":
             full_text += ev["text"]
-        elif ev["type"] == "tool_call":
+        elif ev["type"] in {"tool_call", "tool_start"}:
             tool_calls.append({"tool": ev["tool"], "query": ev.get("query", "")})
         elif ev["type"] == "final" and not full_text:
             full_text = ev["text"]
@@ -268,6 +268,20 @@ class ChatService:
         """编排事件 → SSE。final 不单独发（token 已累积）。"""
         if ev["type"] == "token":
             return _sse("token", {"text": ev["text"]})
+        if ev["type"] == "thought":
+            return _sse("thought", {"text": ev["text"]})
+        if ev["type"] == "tool_start":
+            return _sse("tool_start", {"tool": ev["tool"], "query": ev.get("query", "")})
+        if ev["type"] == "tool_result":
+            return _sse(
+                "tool_result",
+                {
+                    "tool": ev["tool"],
+                    "query": ev.get("query", ""),
+                    "status": ev.get("status", "success"),
+                    "text": ev.get("text", ""),
+                },
+            )
         if ev["type"] == "tool_call":
             return _sse("tool_call", {"tool": ev["tool"], "query": ev.get("query", "")})
         return None
