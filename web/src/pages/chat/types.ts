@@ -1,4 +1,4 @@
-import type { Citation, ToolCall } from '@/api/chat'
+import type { Citation, ToolCall, ToolRun } from '@/api/chat'
 
 // 前端消息模型（含流式中的临时状态）
 export interface UiMessage {
@@ -7,6 +7,8 @@ export interface UiMessage {
   content: string
   citations?: Citation[]
   toolCalls?: ToolCall[]
+  toolRuns?: ToolRun[]
+  thoughts?: string[]
   images?: string[] // 图片 url（用户消息）
   attachments?: { file_name: string }[] // 对话临时文档附件（仅显示文件名）
   streaming?: boolean

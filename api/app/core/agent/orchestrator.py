@@ -4,7 +4,9 @@
 - 弱模型：ToolOrchestrator（prompt 模拟 ReAct），解析 Action/Action Input 手动调工具。
 
 两条路径都产出统一事件 dict：
-  {"type": "tool_call", "tool", "query"} / {"type": "token", "text"} / {"type": "final", "text"}
+  {"type": "thought", "text"} / {"type": "tool_start", "tool", "query"} /
+  {"type": "tool_result", "tool", "query", "status", "text"} /
+  {"type": "token", "text"} / {"type": "final", "text"}
 引用由工具执行时写入外部传入的 citations 列表，编排结束后由调用方读取。
 """
 import re
@@ -20,6 +22,14 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 MAX_TOOL_ITERATIONS = 5
+MAX_TOOL_RESULT_PREVIEW = 600
+
+
+def _preview_observation(observation: object) -> str:
+    text = str(observation)
+    if len(text) <= MAX_TOOL_RESULT_PREVIEW:
+        return text
+    return text[:MAX_TOOL_RESULT_PREVIEW].rstrip() + "..."
 
 
 async def run_function_calling(
@@ -33,6 +43,7 @@ async def run_function_calling(
     full_text = ""
 
     for _ in range(MAX_TOOL_ITERATIONS):
+        yield {"type": "thought", "text": "正在判断是否需要调用工具"}
         gathered = None
         async for chunk in model_with_tools.astream(messages):
             if chunk.content:
@@ -53,15 +64,25 @@ async def run_function_calling(
             name = tc.get("name", "")
             args = tc.get("args", {}) or {}
             query = args.get("query", "")
-            yield {"type": "tool_call", "tool": name, "query": query}
+            yield {"type": "tool_start", "tool": name, "query": query}
             tool = tool_map.get(name)
+            status = "success"
             if tool is None:
                 observation = f"未知工具：{name}"
+                status = "error"
             else:
                 try:
                     observation = await tool.ainvoke(args)
                 except Exception as e:
                     observation = f"工具执行失败：{e}"
+                    status = "error"
+            yield {
+                "type": "tool_result",
+                "tool": name,
+                "query": query,
+                "status": status,
+                "text": _preview_observation(observation),
+            }
             messages.append(
                 ToolMessage(content=str(observation), tool_call_id=tc.get("id", name))
             )
@@ -92,6 +113,7 @@ async def run_react(
     convo: list = [SystemMessage(content=sys), *history, HumanMessage(content=user_text)]
 
     for _ in range(MAX_TOOL_ITERATIONS):
+        yield {"type": "thought", "text": "正在规划工具调用"}
         resp = await model.ainvoke(convo)
         text = resp.content if isinstance(resp.content, str) else str(resp.content)
 
@@ -112,16 +134,26 @@ async def run_react(
 
         tool_name = action_match.group(1).strip().splitlines()[0].strip()
         query = (input_match.group(1).strip().splitlines()[0].strip() if input_match else user_text)
-        yield {"type": "tool_call", "tool": tool_name, "query": query}
+        yield {"type": "tool_start", "tool": tool_name, "query": query}
 
         tool = tool_map.get(tool_name)
+        status = "success"
         if tool is None:
             observation = f"未知工具：{tool_name}"
+            status = "error"
         else:
             try:
                 observation = await tool.ainvoke({"query": query})
             except Exception as e:
                 observation = f"工具执行失败：{e}"
+                status = "error"
+        yield {
+            "type": "tool_result",
+            "tool": tool_name,
+            "query": query,
+            "status": status,
+            "text": _preview_observation(observation),
+        }
         # 把模型上一轮输出 + Observation 回灌
         convo.append(AIMessage(content=text))
         convo.append(HumanMessage(content=f"Observation: {observation}"))

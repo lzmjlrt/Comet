@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Button, Space, Tag, Tooltip, message as antdMessage } from 'antd'
 import {
+  CheckCircleFilled,
   CopyOutlined,
   DislikeFilled,
   DislikeOutlined,
+  ExclamationCircleFilled,
   FileTextOutlined,
   LikeFilled,
   LikeOutlined,
@@ -99,6 +101,15 @@ export default function MessageItem({
     )
   }
   const hasAvatar = showAvatars && !!sideAvatarUrl
+  const hasProcess =
+    !isUser && ((msg.thoughts?.length ?? 0) > 0 || (msg.toolRuns?.length ?? 0) > 0)
+  const shouldRenderBubble = isUser || msg.content || !hasProcess
+
+  const toolStatusText = {
+    running: '调用中',
+    success: '已完成',
+    error: '失败',
+  }
 
   return (
     <div
@@ -113,8 +124,49 @@ export default function MessageItem({
     >
       {renderAvatar()}
       <div style={{ maxWidth: '82%', minWidth: 0 }}>
-        {/* 工具调用标记（AI 消息） */}
-        {!isUser && msg.toolCalls && msg.toolCalls.length > 0 && (
+        {/* AI 过程流：思考与工具调用会在 SSE 到达时即时追加 */}
+        {hasProcess && (
+          <div className="chat-process">
+            {msg.thoughts?.map((thought, i) => (
+              <div key={`thought-${i}`} className="chat-process-row">
+                <span
+                  className={`chat-process-dot${
+                    msg.streaming && i === (msg.thoughts?.length ?? 0) - 1
+                      ? ' chat-process-dot--running'
+                      : ''
+                  }`}
+                />
+                <span className="chat-process-text">{thought}</span>
+              </div>
+            ))}
+            {msg.toolRuns?.map((run) => {
+              const meta = resolveToolMeta(run.tool)
+              return (
+                <Tooltip key={run.id} title={run.query || run.result}>
+                  <div className={`chat-process-tool chat-process-tool--${run.status}`}>
+                    <span className="chat-process-tool__icon">
+                      {run.status === 'running' ? (
+                        <span className="chat-process-spinner" />
+                      ) : run.status === 'success' ? (
+                        <CheckCircleFilled />
+                      ) : (
+                        <ExclamationCircleFilled />
+                      )}
+                    </span>
+                    <span className="chat-process-tool__name">
+                      {meta.icon} {meta.label}
+                    </span>
+                    <span className="chat-process-tool__query">
+                      {run.query || toolStatusText[run.status]}
+                    </span>
+                  </div>
+                </Tooltip>
+              )
+            })}
+          </div>
+        )}
+
+        {!hasProcess && !isUser && msg.toolCalls && msg.toolCalls.length > 0 && (
           <Space size={[4, 4]} wrap style={{ marginBottom: 8 }}>
             {msg.toolCalls.map((tc, i) => {
               const meta = resolveToolMeta(tc.tool)
@@ -129,74 +181,78 @@ export default function MessageItem({
           </Space>
         )}
 
-        <div
-          style={{
-            background: isUser
-              ? 'linear-gradient(135deg, #1d6bff 0%, #2f7bff 100%)'
-              : '#fff',
-            color: isUser ? '#fff' : '#1D2129',
-            padding: isUser ? '12px 16px' : '14px 18px',
-            borderRadius: isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
-            border: isUser ? 'none' : '1px solid #eef0f4',
-            boxShadow: isUser
-              ? '0 6px 18px -6px rgba(21, 94, 239, 0.45)'
-              : '0 4px 16px -10px rgba(16, 24, 40, 0.2)',
-            fontSize: 16,
-            lineHeight: 1.75,
-          }}
-        >
-          {/* 用户消息图片 */}
-          {isUser && msg.images && msg.images.length > 0 && (
-            <Space wrap style={{ marginBottom: 8 }}>
-              {msg.images.map((url, i) => (
-                <AuthenticatedImage
-                  key={i}
-                  src={url}
-                  alt=""
-                  style={{ maxWidth: 160, maxHeight: 160, borderRadius: 8 }}
-                />
-              ))}
-            </Space>
-          )}
+        {shouldRenderBubble && (
+          <div
+            style={{
+              background: isUser
+                ? 'linear-gradient(135deg, #1d6bff 0%, #2f7bff 100%)'
+                : '#fff',
+              color: isUser ? '#fff' : '#1D2129',
+              padding: isUser ? '12px 16px' : '14px 18px',
+              borderRadius: isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
+              border: isUser ? 'none' : '1px solid #eef0f4',
+              boxShadow: isUser
+                ? '0 6px 18px -6px rgba(21, 94, 239, 0.45)'
+                : '0 4px 16px -10px rgba(16, 24, 40, 0.2)',
+              fontSize: 16,
+              lineHeight: 1.75,
+            }}
+          >
+            {/* 用户消息图片 */}
+            {isUser && msg.images && msg.images.length > 0 && (
+              <Space wrap style={{ marginBottom: 8 }}>
+                {msg.images.map((url, i) => (
+                  <AuthenticatedImage
+                    key={i}
+                    src={url}
+                    alt=""
+                    style={{ maxWidth: 160, maxHeight: 160, borderRadius: 8 }}
+                  />
+                ))}
+              </Space>
+            )}
 
-          {/* 用户消息附件（文档，仅显示文件名） */}
-          {isUser && msg.attachments && msg.attachments.length > 0 && (
-            <Space wrap style={{ marginBottom: 8 }}>
-              {msg.attachments.map((a, i) => (
-                <span
-                  key={i}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    background: 'rgba(255,255,255,0.18)',
-                    borderRadius: 8,
-                    padding: '4px 10px',
-                    fontSize: 13,
-                    maxWidth: 220,
-                  }}
-                >
-                  <FileTextOutlined />
+            {/* 用户消息附件（文档，仅显示文件名） */}
+            {isUser && msg.attachments && msg.attachments.length > 0 && (
+              <Space wrap style={{ marginBottom: 8 }}>
+                {msg.attachments.map((a, i) => (
                   <span
+                    key={i}
                     style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: 'rgba(255,255,255,0.18)',
+                      borderRadius: 8,
+                      padding: '4px 10px',
+                      fontSize: 13,
+                      maxWidth: 220,
                     }}
                   >
-                    {a.file_name}
+                    <FileTextOutlined />
+                    <span
+                      style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {a.file_name}
+                    </span>
                   </span>
-                </span>
-              ))}
-            </Space>
-          )}
+                ))}
+              </Space>
+            )}
 
-          {isUser ? (
-            <span style={{ whiteSpace: 'pre-wrap', fontSize: 16 }}>{msg.content}</span>
-          ) : (
-            <MarkdownMessage content={msg.content || (msg.streaming ? '思考中…' : '')} />
-          )}
-        </div>
+            {isUser ? (
+              <span style={{ whiteSpace: 'pre-wrap', fontSize: 16 }}>{msg.content}</span>
+            ) : (
+              <MarkdownMessage
+                content={msg.content || (msg.streaming && !hasProcess ? '思考中…' : '')}
+              />
+            )}
+          </div>
+        )}
 
         {/* 用户消息复制按钮 + 时间（右对齐） */}
         {isUser && msg.content && (

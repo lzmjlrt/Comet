@@ -31,6 +31,8 @@ import {
   regenerateMessage,
   type Conversation,
   type ChatMessage,
+  type ToolCall,
+  type ToolRunStatus,
 } from '@/api/chat'
 import { favoriteApi } from '@/api/favorites'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
@@ -80,6 +82,90 @@ export default function ChatPage() {
   const groupsInited = useRef(false)
 
   const convGroups = groupConversationsByDate(conversations)
+
+  const appendThought = (messageId: string, text: string) => {
+    const thought = text.trim()
+    if (!thought) return
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? {
+              ...m,
+              thoughts: [...(m.thoughts ?? []), thought],
+            }
+          : m,
+      ),
+    )
+  }
+
+  const startToolRun = (messageId: string, tc: ToolCall) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId) return m
+        const toolRuns = m.toolRuns ?? []
+        const nextRun = {
+          id: `${tc.tool}-${toolRuns.length}-${Date.now()}`,
+          tool: tc.tool,
+          query: tc.query,
+          status: 'running' as const,
+        }
+        return {
+          ...m,
+          toolRuns: [...toolRuns, nextRun],
+          toolCalls: [...(m.toolCalls ?? []), tc],
+        }
+      }),
+    )
+  }
+
+  const finishToolRun = (
+    messageId: string,
+    tc: ToolCall & { status?: ToolRunStatus; text?: string },
+  ) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId) return m
+        const toolRuns = m.toolRuns ?? []
+        const idx = [...toolRuns]
+          .reverse()
+          .findIndex(
+            (run) =>
+              run.status === 'running' &&
+              run.tool === tc.tool &&
+              (!tc.query || run.query === tc.query),
+          )
+        if (idx < 0) return m
+        const targetIndex = toolRuns.length - 1 - idx
+        return {
+          ...m,
+          toolRuns: toolRuns.map((run, i) =>
+            i === targetIndex
+              ? {
+                  ...run,
+                  status: tc.status ?? 'success',
+                  result: tc.text,
+                }
+              : run,
+          ),
+        }
+      }),
+    )
+  }
+
+  const settleRunningToolRuns = (messageId: string, status: ToolRunStatus) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? {
+              ...m,
+              toolRuns: m.toolRuns?.map((run) =>
+                run.status === 'running' ? { ...run, status } : run,
+              ),
+            }
+          : m,
+      ),
+    )
+  }
 
   // 首次拿到会话时，默认仅展开「今天」，其余分组折叠
   useEffect(() => {
@@ -238,7 +324,16 @@ export default function ChatPage() {
     setMessages((prev) =>
       prev.map((m) =>
         m.id === target.id
-          ? { ...m, content: '', toolCalls: [], citations: undefined, streaming: true, feedback: null }
+          ? {
+              ...m,
+              content: '',
+              toolCalls: [],
+              toolRuns: [],
+              thoughts: [],
+              citations: undefined,
+              streaming: true,
+              feedback: null,
+            }
           : m,
       ),
     )
@@ -249,19 +344,16 @@ export default function ChatPage() {
           prev.map((m) => (m.id === aiId ? { ...m, content: m.content + t } : m)),
         )
       },
-      onToolCall: (tc) => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === aiId ? { ...m, toolCalls: [...(m.toolCalls ?? []), tc] } : m,
-          ),
-        )
-      },
+      onThought: (text) => appendThought(aiId, text),
+      onToolStart: (tc) => startToolRun(aiId, tc),
+      onToolResult: (tc) => finishToolRun(aiId, tc),
       onCitation: (cites) => {
         setMessages((prev) =>
           prev.map((m) => (m.id === aiId ? { ...m, citations: cites } : m)),
         )
       },
       onDone: (d) => {
+        settleRunningToolRuns(aiId, 'success')
         setMessages((prev) =>
           prev.map((m) =>
             m.id === aiId
@@ -272,6 +364,7 @@ export default function ChatPage() {
         setSending(false)
       },
       onError: (msg) => {
+        settleRunningToolRuns(aiId, 'error')
         setMessages((prev) =>
           prev.map((m) =>
             m.id === aiId ? { ...m, content: `⚠️ ${msg}`, streaming: false } : m,
@@ -390,6 +483,8 @@ export default function ChatPage() {
       role: 'assistant',
       content: '',
       toolCalls: [],
+      toolRuns: [],
+      thoughts: [],
       streaming: true,
     }
     setMessages((prev) => [...prev, userMsg, aiMsg])
@@ -422,21 +517,16 @@ export default function ChatPage() {
             ),
           )
         },
-        onToolCall: (tc) => {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === aiMsg.id
-                ? { ...m, toolCalls: [...(m.toolCalls ?? []), tc] }
-                : m,
-            ),
-          )
-        },
+        onThought: (text) => appendThought(aiMsg.id, text),
+        onToolStart: (tc) => startToolRun(aiMsg.id, tc),
+        onToolResult: (tc) => finishToolRun(aiMsg.id, tc),
         onCitation: (cites) => {
           setMessages((prev) =>
             prev.map((m) => (m.id === aiMsg.id ? { ...m, citations: cites } : m)),
           )
         },
         onDone: (d) => {
+          settleRunningToolRuns(aiMsg.id, 'success')
           setMessages((prev) =>
             prev.map((m) =>
               m.id === aiMsg.id
@@ -454,6 +544,7 @@ export default function ChatPage() {
           loadConversations()
         },
         onError: (msg) => {
+          settleRunningToolRuns(aiMsg.id, 'error')
           setMessages((prev) =>
             prev.map((m) =>
               m.id === aiMsg.id
