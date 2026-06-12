@@ -38,6 +38,7 @@ import {
 import { favoriteApi } from '@/api/favorites'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
 import MessageItem from './chat/MessageItem'
+import SelectionPopover from './chat/SelectionPopover'
 import type { ChatAvatars, UiMessage } from './chat/types'
 import { groupConversationsByDate } from './chat/groupByDate'
 import { useMusicStore } from '@/stores/musicStore'
@@ -584,6 +585,17 @@ export default function ChatPage() {
     setTimeout(() => inputRef.current?.focus(), 0)
   }
 
+  // 划词追问：选中 AI 回答片段 → 把引用填进输入框待补充（追问留空待问，解释预填请求）
+  const onQuoteAsk = (quote: string, mode: 'ask' | 'explain') => {
+    const clip = quote.length > 200 ? quote.slice(0, 200) + '…' : quote
+    const prefix =
+      mode === 'explain'
+        ? `请解释这句：「${clip}」\n`
+        : `关于「${clip}」，`
+    setInput((prev) => (prev ? prev + '\n' + prefix : prefix))
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
   const SUGGESTIONS = [
     '帮我总结一下知识库里的内容',
     '我最近都聊过些什么？',
@@ -1000,6 +1012,9 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      {/* 划词追问：选中 AI 回答片段浮出「追问/解释」 */}
+      <SelectionPopover onAsk={onQuoteAsk} />
     </div>
   )
 }
