@@ -3242,3 +3242,11 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* 手机端：写死 width 的弹窗（如 680px 的编辑弹窗）限宽，避免横向溢出 */
+@media (max-width: 768px) {
+  .ant-modal {
+    max-width: calc(100vw - 24px) !important;
+    margin: 0 auto !important;
+  }
+}
