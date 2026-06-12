@@ -38,6 +38,7 @@ import {
 } from '@/api/chat'
 import { favoriteApi } from '@/api/favorites'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
+import VoiceInputButton from '@/components/VoiceInputButton'
 import MessageItem from './chat/MessageItem'
 import SelectionPopover from './chat/SelectionPopover'
 import ShareModal from './chat/ShareModal'
@@ -940,6 +941,10 @@ export default function ChatPage() {
                       style={{ flexShrink: 0, color: webSearch ? '#155EEF' : undefined }}
                     />
                   </Popover>
+                  <VoiceInputButton
+                    size={18}
+                    onResult={(t) => setInput((prev) => (prev ? prev + ' ' + t : t))}
+                  />
                   <Input.TextArea
                     ref={inputRef as never}
                     value={input}
@@ -1006,13 +1011,23 @@ export default function ChatPage() {
                         </Tooltip>
                       </Upload>
                       <Tooltip title="联网搜索">
-                        <Space size={6} align="center">
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            height: 32,
+                          }}
+                        >
                           <GlobalOutlined
                             style={{ fontSize: 18, color: webSearch ? '#155EEF' : '#98A2B3' }}
                           />
                           <Switch size="small" checked={webSearch} onChange={setWebSearch} />
-                        </Space>
+                        </span>
                       </Tooltip>
+                      <VoiceInputButton
+                        onResult={(t) => setInput((prev) => (prev ? prev + ' ' + t : t))}
+                      />
                     </Space>
                     <Button
                       type="primary"

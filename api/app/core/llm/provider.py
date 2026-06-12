@@ -26,6 +26,8 @@ async def test_connection(
     """实际调一次目标 API 验证可用性。返回 (是否成功, 中文提示)。"""
     if type_ == "websearch":
         return await _test_websearch(base_url, api_key, model_name)
+    if type_ == "asr":
+        return _test_asr(base_url, model_name)
     base = base_url.rstrip("/")
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
@@ -80,6 +82,14 @@ async def test_connection(
     except Exception:
         detail = resp.text[:200]
     return False, f"测试失败（HTTP {resp.status_code}）：{detail}"
+
+
+def _test_asr(_base_url: str, model_name: str) -> tuple[bool, str]:
+    """ASR 配置校验：录音文件识别是异步任务，无低成本 ping，故仅校验模型已填，
+    真实可用性在发送语音时验证。"""
+    if not model_name:
+        return False, "请填写模型名（如 paraformer-v2 / whisper-1）"
+    return True, "配置已保存（语音识别将在发送语音时验证）"
 
 
 async def _test_websearch(

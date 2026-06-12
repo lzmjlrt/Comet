@@ -132,6 +132,15 @@ export const chatApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+  // 语音转文字（路 B 云端 ASR）：上传音频，返回识别文本。未配 ASR 模型时后端报错降级
+  transcribe(blob: Blob) {
+    const form = new FormData()
+    const ext = blob.type.includes('wav') ? 'wav' : blob.type.includes('mp4') ? 'm4a' : 'webm'
+    form.append('file', blob, `voice.${ext}`)
+    return client.post<unknown, Wrapped<{ text: string }>>('/chat/transcribe', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
   setFeedback(messageId: string, rating: 'up' | 'down') {
     return client.post<unknown, Wrapped<{ id: string; rating: string }>>(
       `/chat/messages/${messageId}/feedback`,

@@ -37,6 +37,7 @@ import {
 import { personaApi, type Persona } from '@/api/personas'
 import MarkdownMessage from '@/components/MarkdownMessage'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
+import VoiceInputButton from '@/components/VoiceInputButton'
 import { useAuthStore } from '@/stores/authStore'
 import { resolveToolMeta } from '@/pages/chat/types'
 import ShareModal from '@/pages/chat/ShareModal'
@@ -684,6 +685,10 @@ export default function GroupChatPage() {
                     style={{ flexShrink: 0 }}
                   />
                 </Upload>
+                <VoiceInputButton
+                  size={18}
+                  onResult={(t) => setInput((prev) => (prev ? prev + ' ' + t : t))}
+                />
                 <Input.TextArea
                   ref={inputRef}
                   value={input}
@@ -721,20 +726,25 @@ export default function GroupChatPage() {
                 disabled={sending}
               />
               <div className="gc-input-toolbar">
-                <Upload
-                  accept="image/*"
-                  showUploadList={false}
-                  beforeUpload={handleUploadImage}
-                  disabled={uploading || sending}
-                >
-                  <Tooltip title="上传图片（每个角色看图发言）">
-                    <Button
-                      type="text"
-                      icon={<PictureOutlined style={{ fontSize: 19 }} />}
-                      loading={uploading}
-                    />
-                  </Tooltip>
-                </Upload>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Upload
+                    accept="image/*"
+                    showUploadList={false}
+                    beforeUpload={handleUploadImage}
+                    disabled={uploading || sending}
+                  >
+                    <Tooltip title="上传图片（每个角色看图发言）">
+                      <Button
+                        type="text"
+                        icon={<PictureOutlined style={{ fontSize: 19 }} />}
+                        loading={uploading}
+                      />
+                    </Tooltip>
+                  </Upload>
+                  <VoiceInputButton
+                    onResult={(t) => setInput((prev) => (prev ? prev + ' ' + t : t))}
+                  />
+                </span>
                 <Button
                   type="primary"
                   size="large"
