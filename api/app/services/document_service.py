@@ -15,6 +15,7 @@ from app.models.document_model import (
     Document,
 )
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from app.repositories.tag_repository import TagRepository
 
 logger = get_logger(__name__)
@@ -27,6 +28,7 @@ class DocumentService:
         self.session = session
         self.repo = DocumentRepository(session)
         self.tag_repo = TagRepository(session)
+        self.kb_repo = KnowledgeBaseRepository(session)
 
     async def _dispatch_parse(self, document_id: uuid.UUID) -> None:
         # 延迟导入，避免 worker 未装时影响导入
@@ -34,8 +36,23 @@ class DocumentService:
 
         parse_document_task.delay(str(document_id))
 
+    async def _resolve_kb_id(
+        self, user_id: uuid.UUID, kb_id: uuid.UUID | None
+    ) -> uuid.UUID:
+        """确定文档归属库：指定了就校验归属，没指定落默认库。"""
+        if kb_id:
+            kb = await self.kb_repo.get(user_id, kb_id)
+            if not kb:
+                raise BizError("知识库不存在", code=3040, status_code=404)
+            return kb.id
+        return (await self.kb_repo.ensure_default(user_id)).id
+
     async def upload(
-        self, user_id: uuid.UUID, file_name: str, content: bytes
+        self,
+        user_id: uuid.UUID,
+        file_name: str,
+        content: bytes,
+        kb_id: uuid.UUID | None = None,
     ) -> Document:
         ext = Path(file_name).suffix.lower()
         if ext not in SUPPORTED_EXTS:
@@ -43,6 +60,7 @@ class DocumentService:
         if len(content) > MAX_FILE_SIZE:
             raise BizError("文件超过 50MB 限制", code=3005)
 
+        resolved_kb = await self._resolve_kb_id(user_id, kb_id)
         doc_id = uuid.uuid4()
         file_key = build_file_key(str(user_id), "documents", str(doc_id), ext)
         await get_storage().save(file_key, content)
@@ -50,6 +68,7 @@ class DocumentService:
         doc = Document(
             id=doc_id,
             user_id=user_id,
+            kb_id=resolved_kb,
             file_name=file_name,
             file_ext=ext,
             file_size=len(content),
@@ -62,9 +81,12 @@ class DocumentService:
         logger.info("文档上传: user=%s id=%s name=%s", user_id, doc_id, file_name)
         return doc
 
-    async def import_url(self, user_id: uuid.UUID, url: str) -> Document:
+    async def import_url(
+        self, user_id: uuid.UUID, url: str, kb_id: uuid.UUID | None = None
+    ) -> Document:
         from app.core.rag.web_crawler import fetch_url_content
 
+        resolved_kb = await self._resolve_kb_id(user_id, kb_id)
         title, text = await fetch_url_content(url)
         doc_id = uuid.uuid4()
         file_key = build_file_key(str(user_id), "documents", str(doc_id), ".txt")
@@ -73,6 +95,7 @@ class DocumentService:
         doc = Document(
             id=doc_id,
             user_id=user_id,
+            kb_id=resolved_kb,
             file_name=f"{title}.txt",
             file_ext=".txt",
             file_size=len(text.encode("utf-8")),
@@ -95,9 +118,14 @@ class DocumentService:
         return doc
 
     async def list_documents(
-        self, user_id: uuid.UUID, page: int, page_size: int, tag: str | None = None
+        self,
+        user_id: uuid.UUID,
+        page: int,
+        page_size: int,
+        tag: str | None = None,
+        kb_id: uuid.UUID | None = None,
     ) -> tuple[list[Document], int]:
-        return await self.repo.list_paged(user_id, page, page_size, tag)
+        return await self.repo.list_paged(user_id, page, page_size, tag, kb_id)
 
     async def get_detail(self, user_id: uuid.UUID, doc_id: uuid.UUID) -> Document:
         return await self._get_or_404(user_id, doc_id)
@@ -138,10 +166,29 @@ class DocumentService:
             source_type="document",
         )
 
+    async def move_to_kb(
+        self, user_id: uuid.UUID, doc_id: uuid.UUID, kb_id: uuid.UUID
+    ) -> Document:
+        """把文档移动到另一个知识库，并同步回写 ES chunk 的 kb_id。"""
+        from app.core.rag.es_store import update_kb_by_source
+
+        doc = await self._get_or_404(user_id, doc_id)
+        kb = await self.kb_repo.get(user_id, kb_id)
+        if not kb:
+            raise BizError("知识库不存在", code=3040, status_code=404)
+        doc.kb_id = kb.id
+        await self.repo.save(doc)
+        try:
+            await update_kb_by_source(str(user_id), str(doc_id), str(kb.id))
+        except Exception as e:
+            logger.warning("移动文档回写 ES kb_id 失败（忽略）: %s", e)
+        return doc
+
     async def to_out_dict(self, doc: Document) -> dict:
         tags = await self.tag_repo.get_document_tags(doc.id)
         return {
             "id": str(doc.id),
+            "kb_id": str(doc.kb_id) if doc.kb_id else None,
             "file_name": doc.file_name,
             "file_ext": doc.file_ext,
             "file_size": doc.file_size,

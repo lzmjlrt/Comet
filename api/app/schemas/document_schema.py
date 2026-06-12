@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class UrlImportRequest(BaseModel):
     url: str = Field(min_length=1, max_length=1024)
+    kb_id: uuid.UUID | None = Field(default=None, description="归属知识库")
 
 
 class DocumentOut(BaseModel):

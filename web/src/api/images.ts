@@ -10,6 +10,7 @@ export type ImageStatus = 'pending' | 'processing' | 'done' | 'failed'
 
 export interface ImageItem {
   id: string
+  kb_id: string | null
   file_name: string
   file_ext: string
   file_size: number
@@ -40,14 +41,16 @@ export interface ImageSearchHit {
 }
 
 export const imageApi = {
-  list(page = 1, pageSize = 60, tag?: string) {
+  list(page = 1, pageSize = 60, tag?: string, kbId?: string) {
     const q = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
     if (tag) q.set('tag', tag)
+    if (kbId) q.set('kb_id', kbId)
     return client.get<unknown, Wrapped<ImageListData>>(`/images?${q.toString()}`)
   },
-  upload(file: File) {
+  upload(file: File, kbId?: string) {
     const form = new FormData()
     form.append('file', file)
+    if (kbId) form.append('kb_id', kbId)
     return client.post<unknown, Wrapped<ImageItem>>('/images/upload', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
@@ -63,5 +66,10 @@ export const imageApi = {
   },
   remove(id: string) {
     return client.delete<unknown, Wrapped<null>>(`/images/${id}`)
+  },
+  move(id: string, kbId: string) {
+    return client.put<unknown, Wrapped<ImageItem>>(`/images/${id}/move`, {
+      kb_id: kbId,
+    })
   },
 }

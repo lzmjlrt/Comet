@@ -27,10 +27,22 @@ export interface ToolCall {
 
 export type ToolRunStatus = 'running' | 'success' | 'error'
 
+export interface ToolRunStats {
+  hit_count?: number
+  doc_count?: number
+  entity_count?: number
+  relation_count?: number
+  web_count?: number
+  provider?: string
+  [k: string]: unknown
+}
+
 export interface ToolRun extends ToolCall {
   id: string
   status: ToolRunStatus
   result?: string
+  stats?: ToolRunStats
+  latencyMs?: number
 }
 
 export interface ChatAttachment {
@@ -54,6 +66,7 @@ export interface ChatMessage {
 export interface SendOptions {
   conversationId?: string
   message: string
+  skillId?: string | null
   imageKeys?: string[]
   attachments?: ChatAttachment[]
   enableKnowledge?: boolean
@@ -65,9 +78,13 @@ export interface SendOptions {
 export interface StreamHandlers {
   onMeta?: (d: { conversation_id: string; title: string }) => void
   onToken?: (text: string) => void
-  onThought?: (text: string) => void
   onToolStart?: (d: ToolCall) => void
-  onToolResult?: (d: ToolCall & { status?: ToolRunStatus; text?: string }) => void
+  onToolResult?: (d: ToolCall & {
+    status?: ToolRunStatus
+    text?: string
+    stats?: ToolRunStats
+    latency_ms?: number
+  }) => void
   onToolCall?: (d: ToolCall) => void
   onCitation?: (citations: Citation[]) => void
   onDone?: (d: { conversation_id: string; message_id?: string }) => void
@@ -131,6 +148,7 @@ export async function streamChat(
     {
       conversation_id: opts.conversationId ?? null,
       message: opts.message,
+      skill_id: opts.skillId ?? null,
       image_keys: opts.imageKeys ?? [],
       attachments: opts.attachments ?? [],
       enable_knowledge: opts.enableKnowledge ?? null,
@@ -216,9 +234,6 @@ function dispatchEvent(
       break
     case 'token':
       handlers.onToken?.(payload.text as string)
-      break
-    case 'thought':
-      handlers.onThought?.(payload.text as string)
       break
     case 'tool_start':
       handlers.onToolStart?.(payload as never)

@@ -22,6 +22,7 @@ def build_chunk_doc(
     vector: list[float] | None,
     parent_id: str | None = None,
     tags: list[str] | None = None,
+    kb_id: str | None = None,
 ) -> dict:
     """构造一条 ES chunk 文档。"""
     chunk_id = uuid.uuid4().hex
@@ -30,6 +31,7 @@ def build_chunk_doc(
         "_id": chunk_id,
         "_source": {
             "user_id": user_id,
+            "kb_id": kb_id,
             "source_type": source_type,
             "source_id": source_id,
             "doc_name": doc_name,
@@ -100,3 +102,50 @@ async def update_tags_by_source(
         },
         refresh=True,
     )
+
+
+async def update_kb_by_source(user_id: str, source_id: str, kb_id: str) -> None:
+    """更新某来源所有 chunk 的 kb_id（文档/图片移动到其他知识库后回写）。"""
+    es = get_es()
+    await es.update_by_query(
+        index=CHUNKS_INDEX,
+        body={
+            "query": {
+                "bool": {
+                    "filter": [
+                        {"term": {"user_id": user_id}},
+                        {"term": {"source_id": source_id}},
+                    ]
+                }
+            },
+            "script": {
+                "source": "ctx._source.kb_id = params.kb_id",
+                "params": {"kb_id": kb_id},
+            },
+        },
+        refresh=True,
+    )
+
+
+async def backfill_kb_id(user_id: str, kb_id: str) -> int:
+    """把该用户所有缺失 kb_id 的 chunk 回填为默认库 id（存量迁移用）。返回更新条数。"""
+    es = get_es()
+    resp = await es.update_by_query(
+        index=CHUNKS_INDEX,
+        body={
+            "query": {
+                "bool": {
+                    "filter": [{"term": {"user_id": user_id}}],
+                    "must_not": [{"exists": {"field": "kb_id"}}],
+                }
+            },
+            "script": {
+                "source": "ctx._source.kb_id = params.kb_id",
+                "params": {"kb_id": kb_id},
+            },
+        },
+        refresh=True,
+    )
+    updated = resp.get("updated", 0)
+    logger.info("ES 回填 user=%s 缺失 kb_id 的 %d 条 chunk", user_id, updated)
+    return updated

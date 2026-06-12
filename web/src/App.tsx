@@ -3,13 +3,15 @@ import MainLayout from './layouts/MainLayout'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import ModelConfigPage from './pages/ModelConfigPage'
-import KnowledgePage from './pages/KnowledgePage'
+import KnowledgeBasePage from './pages/KnowledgeBasePage'
+import KnowledgeDetailPage from './pages/KnowledgeDetailPage'
 import ImagePage from './pages/ImagePage'
 import MemoryPage from './pages/MemoryPage'
 import GraphPage from './pages/GraphPage'
 import MusicLibraryPage from './pages/MusicLibraryPage'
 import ChatPage from './pages/ChatPage'
 import AgentConfigPage from './pages/AgentConfigPage'
+import SkillPage from './pages/SkillPage'
 import ToolConfigPage from './pages/ToolConfigPage'
 import SearchPage from './pages/SearchPage'
 import FavoritesPage from './pages/FavoritesPage'
@@ -32,7 +34,8 @@ export default function App() {
         >
           <Route index element={<HomePage />} />
           <Route path="chat" element={<ChatPage />} />
-          <Route path="knowledge" element={<KnowledgePage />} />
+          <Route path="knowledge" element={<KnowledgeBasePage />} />
+          <Route path="knowledge-bases/:kbId" element={<KnowledgeDetailPage />} />
           <Route path="images" element={<ImagePage />} />
           <Route path="memory" element={<MemoryPage />} />
           <Route path="graph" element={<GraphPage />} />
@@ -42,6 +45,7 @@ export default function App() {
           <Route path="profile" element={<ProfilePage />} />
           <Route path="settings/models" element={<ModelConfigPage />} />
           <Route path="settings/agent" element={<AgentConfigPage />} />
+          <Route path="settings/skills" element={<SkillPage />} />
           <Route path="settings/tools" element={<ToolConfigPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

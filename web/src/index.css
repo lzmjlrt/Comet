@@ -10,16 +10,11 @@ body,
   height: 100%;
 }
 
-/* 全局整体缩放：在浏览器 100% 缩放下得到舒适比例，
-   统一缩放包括硬编码 px 的元素，避免逐个改 px。
-   配合下方把所有 100vh 改为 100%（跟随被缩放的容器），
-   不依赖视口高度计算，故不会出现底部留白或跨浏览器误差。
-   仅桌面端启用；手机屏本身就小，再缩放反而字太小，故 768px 以下取消。 */
-@media (min-width: 769px) {
-  #root {
-    zoom: 0.75;
-  }
-}
+/* 自适应策略（企业级流式布局）：
+   不使用整体 zoom 缩放（zoom 是固定倍数，无法适应不同尺寸屏幕，且污染 vh/fixed/滚动条）。
+   改为：字号/间距用固定 px（所有屏幕一致、符合用户预期）+ 布局靠 flex / max-width 居中流动。
+   小屏占满宽度，大屏内容居中、两侧留白；多列卡片用 AntD Row/Col 断点降列。
+   详见 .kiro/steering/01-编码规范.md「自适应布局」。 */
 
 body {
   font-family: 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI',
@@ -116,15 +111,18 @@ body {
 }
 
 
-/* 自适应内容容器：小屏占满、宽屏收拢居中（max-width 用 rem 随字号缩放） */
+/* 自适应内容容器：小屏占满、宽屏收拢居中。
+   用 px 固定上限（企业级后台常规内容宽度），不依赖 zoom/根字号缩放。
+   .fluid-page  常规列表/表单/卡片页（≈1200px 居中）
+   .fluid-narrow 阅读型窄栏（对话/长文，≈760px 居中） */
 .fluid-page {
   width: 100%;
-  max-width: 64rem;
+  max-width: 1200px;
   margin-inline: auto;
 }
 .fluid-narrow {
   width: 100%;
-  max-width: 50rem;
+  max-width: 760px;
   margin-inline: auto;
 }
 
@@ -1328,28 +1326,71 @@ body {
   height: 0;
   display: none; /* Chrome/Safari */
 }
+/* ──────────── 工具调用过程：进度线 + 状态条 + chip 行（克制但有质感） ──────────── */
 .chat-process {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 0 0 8px;
+  gap: 8px;
+  margin: 0 0 10px;
   color: #475467;
   font-size: 13px;
   line-height: 1.45;
 }
-.chat-process-row,
-.chat-process-tool {
+
+/* 顶部 1px 渐变流光进度线（克制：无装饰元素） */
+.chat-process-progress {
+  position: relative;
+  height: 6px;
+  display: flex;
+  align-items: center;
+  margin-bottom: -2px;
+}
+.chat-process-progress::before {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 1px;
+  background: rgba(21, 94, 239, 0.08);
+  border-radius: 1px;
+}
+.chat-process-progress-bar {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 1px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, #155eef 0%, #4e8cff 60%, #80b3ff 100%);
+  box-shadow: 0 0 6px rgba(21, 94, 239, 0.45);
+  transition: width 350ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 状态条（替换式） */
+.chat-process-headline {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   width: fit-content;
   max-width: 100%;
-  min-height: 28px;
-  padding: 5px 10px;
-  border: 1px solid #e7ebf0;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 5px 18px -16px rgba(15, 23, 42, 0.45);
+  min-height: 24px;
+  padding: 3px 4px;
+  color: #475467;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease,
+    max-height 220ms ease;
+  overflow: hidden;
+  max-height: 28px;
+}
+.chat-process-headline--hide {
+  opacity: 0;
+  transform: translateY(-4px);
+  max-height: 0;
+  margin-bottom: -8px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .chat-process-dot {
   width: 8px;
@@ -1363,32 +1404,74 @@ body {
   box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.12);
   animation: chat-process-pulse 1.2s ease-in-out infinite;
 }
-.chat-process-text,
-.chat-process-tool__query {
+.chat-process-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-process-tool {
-  color: #344054;
+
+/* 工具 chip 行（横排 wrap，stagger 入场） */
+.chat-process-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
 }
-.chat-process-tool--running {
+.chat-process-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid #e7ebf0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  line-height: 1.4;
+  position: relative;
+  box-shadow: 0 4px 14px -12px rgba(15, 23, 42, 0.5);
+  animation: chat-process-chip-in 280ms cubic-bezier(0.18, 0.89, 0.32, 1.28) backwards;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease;
+}
+.chat-process-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px -10px rgba(15, 23, 42, 0.45);
+}
+.chat-process-chip--running {
   border-color: #c7d7fe;
   background: #f5f8ff;
   color: #155eef;
 }
-.chat-process-tool--success {
+.chat-process-chip--success {
   border-color: #d1fadf;
   background: #f6fef9;
   color: #027a48;
 }
-.chat-process-tool--error {
+.chat-process-chip--error {
   border-color: #fee4e2;
   background: #fffbfa;
   color: #b42318;
 }
-.chat-process-tool__icon {
+/* B：聚焦/淡化（点击展开时其他 chip 半透明） */
+.chat-process-chip--focus {
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 8px 22px -10px rgba(21, 94, 239, 0.4);
+  z-index: 1;
+}
+.chat-process-chip--dim {
+  opacity: 0.45;
+}
+.chat-process-chip__icon {
   display: inline-flex;
   width: 14px;
   height: 14px;
@@ -1397,15 +1480,134 @@ body {
   justify-content: center;
   font-size: 13px;
 }
-.chat-process-tool__name {
+.chat-process-chip__name {
   flex: 0 0 auto;
   font-weight: 600;
   color: inherit;
 }
-.chat-process-tool__query {
-  max-width: min(420px, 52vw);
+.chat-process-chip__sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #667085;
+  max-width: min(280px, 42vw);
+}
+/* C：引用闭环徽标（数字角标） */
+.chat-process-chip__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: #155eef;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 0 0 2px #fff;
+}
+.chat-process-chip--success .chat-process-chip__badge {
+  background: #027a48;
+}
+
+/* 展开详情面板 */
+.chat-process-panel {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid #eef0f4;
+  background: #fafbff;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #475467;
+  animation: chat-process-panel-in 220ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+.chat-process-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.chat-process-panel__title {
+  font-weight: 600;
+  color: #1d2939;
+}
+.chat-process-panel__meta {
+  font-size: 12px;
   color: #667085;
 }
+.chat-process-panel__row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.chat-process-panel__label {
+  flex: 0 0 auto;
+  width: 36px;
+  color: #98a2b3;
+  font-size: 12px;
+  padding-top: 1px;
+}
+.chat-process-panel__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #344054;
+  word-break: break-word;
+}
+.chat-process-panel__pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #eef0f4;
+  border-radius: 6px;
+  font-family: inherit;
+  white-space: pre-wrap;
+}
+/* MCP / 工具返回值的 Markdown 渲染容器：限高 + 字号收紧，代码块/段落可读 */
+.chat-process-panel__md {
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #eef0f4;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.chat-process-panel__md p {
+  margin: 0 0 6px;
+}
+.chat-process-panel__md p:last-child {
+  margin-bottom: 0;
+}
+.chat-process-panel__md ul,
+.chat-process-panel__md ol {
+  margin: 4px 0 6px;
+  padding-left: 20px;
+}
+.chat-process-panel__md pre {
+  margin: 4px 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  max-height: 180px;
+  overflow: auto;
+}
+.chat-process-panel__md code {
+  font-size: 12px;
+}
+.chat-process-panel__md table {
+  font-size: 12px;
+}
+
 .chat-process-spinner {
   width: 14px;
   height: 14px;
@@ -1414,6 +1616,7 @@ body {
   border-radius: 50%;
   animation: chat-process-spin 0.8s linear infinite;
 }
+
 @keyframes chat-process-spin {
   to {
     transform: rotate(360deg);
@@ -1428,6 +1631,27 @@ body {
     opacity: 1;
   }
 }
+@keyframes chat-process-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes chat-process-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .chat-send-btn {
   background: linear-gradient(135deg, #155eef 0%, #4e8cff 100%) !important;
   border: none !important;
@@ -1679,8 +1903,57 @@ body {
     padding-right: 12px !important;
   }
 
-  .chat-process-tool__query {
-    max-width: 42vw;
+  /* 工具调用过程展示：手机端整体收紧 + chip 副文限宽 + 详情面板预览限高 */
+  .chat-process {
+    gap: 6px;
+    margin-bottom: 8px;
+    font-size: 12.5px;
+  }
+  .chat-process-progress {
+    height: 4px;
+  }
+  .chat-process-headline {
+    font-size: 12.5px;
+    min-height: 22px;
+    padding: 2px 2px;
+  }
+  .chat-process-tools {
+    gap: 5px 6px;
+  }
+  .chat-process-chip {
+    padding: 3px 9px;
+    font-size: 12.5px;
+    min-height: 26px;
+    max-width: 100%;
+  }
+  .chat-process-chip__sub {
+    max-width: 38vw;
+  }
+  /* 详情面板：缩内边距 + 限高，避免摘要 pre 撑爆屏幕 */
+  .chat-process-panel {
+    padding: 10px 12px;
+    font-size: 12.5px;
+  }
+  .chat-process-panel__head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .chat-process-panel__label {
+    width: 32px;
+    font-size: 11.5px;
+  }
+  .chat-process-panel__pre {
+    max-height: 160px;
+    font-size: 12px;
+  }
+  .chat-process-panel__md {
+    max-height: 180px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .chat-process-panel__md pre {
+    max-height: 140px;
   }
 
   /* 仪表盘横幅在手机上压缩留白与字号 */
@@ -2411,5 +2684,499 @@ body {
   .chat-avatar {
     width: 30px;
     height: 30px;
+  }
+}
+
+/* ──────────── 知识库管理 ──────────── */
+.kb-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+.kb-card {
+  position: relative;
+  padding: 18px 18px 12px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #eef0f4;
+  box-shadow: 0 6px 20px -16px rgba(16, 24, 40, 0.4);
+  border-top: 3px solid var(--kb-color, #155eef);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.kb-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -16px rgba(16, 24, 40, 0.45);
+}
+.kb-card--clickable {
+  cursor: pointer;
+}
+.kb-card-chat {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0 2px;
+}
+.kb-card-chat-label {
+  font-size: 12.5px;
+  color: #475467;
+}
+.kb-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.kb-card-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+.kb-card-badge {
+  font-size: 11px;
+  color: var(--kb-color, #155eef);
+  background: rgba(21, 94, 239, 0.1);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.kb-card-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1d2129;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-card-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #667085;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-card-stat {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: #98a2b3;
+}
+.kb-card-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  border-top: 1px solid #f2f4f7;
+  padding-top: 6px;
+}
+/* 图标/颜色选择器 */
+.kb-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.kb-icon-opt {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  border-radius: 8px;
+  border: 1px solid #eef0f4;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.kb-icon-opt--active {
+  border-color: #155eef;
+  background: #eef4ff;
+}
+.kb-color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.kb-color-opt {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px #fff;
+  transition: transform 0.15s ease;
+}
+.kb-color-opt--active {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(21, 94, 239, 0.4);
+}
+
+@media (max-width: 768px) {
+  .kb-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 知识库详情页图片网格 */
+.kb-img-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.kb-img-card {
+  border: 1px solid #eef0f4;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.kb-img-thumb {
+  height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f6f8;
+}
+.kb-img-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  gap: 6px;
+}
+.kb-img-name {
+  font-size: 12.5px;
+  color: #475467;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 768px) {
+  .kb-img-grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  }
+}
+
+/* 知识库详情页头部 + 返回按钮 */
+.kb-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.kb-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.kb-back-btn:hover {
+  background: #e7ebf0;
+  color: #155eef;
+  transform: translateX(-2px);
+}
+.kb-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.kb-detail-icon {
+  font-size: 30px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+/* ── 技能（Skills）页 ── */
+.skill-page {
+  padding-top: 4px;
+}
+/* Hero 条：流光渐变（青蓝色系，与角色卡区分） */
+.skill-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  padding: 26px 28px;
+  margin-bottom: 22px;
+  background: linear-gradient(120deg, #0ea5e9 0%, #6366f1 100%);
+  box-shadow: 0 18px 40px -18px rgba(14, 165, 233, 0.6);
+}
+.skill-hero-bg {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(255, 255, 255, 0.35), transparent 40%),
+    radial-gradient(circle at 88% 80%, rgba(255, 255, 255, 0.22), transparent 45%);
+  pointer-events: none;
+}
+.skill-hero-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #fff;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.skill-hero-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 1px;
+}
+.skill-hero-sub {
+  margin-top: 6px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* 画廊网格 */
+.skill-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+/* 新建卡（幽灵卡） */
+.skill-ghost-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 150px;
+  border: 1.5px dashed #d0d5dd;
+  border-radius: 14px;
+  background: transparent;
+  color: #98a2b3;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+.skill-ghost-card:hover {
+  border-color: #5cc0ec;
+  color: #0ea5e9;
+  background: #f0f9ff;
+}
+.skill-ghost-plus {
+  font-size: 26px;
+  transition: transform 0.25s ease;
+}
+.skill-ghost-card:hover .skill-ghost-plus {
+  transform: scale(1.18);
+}
+
+/* 技能卡 */
+.skill-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  padding: 16px 18px;
+  border: 1px solid #eceef2;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 10px -6px rgba(16, 24, 40, 0.12);
+  transition: all 0.22s ease;
+}
+.skill-card:hover {
+  box-shadow: 0 14px 30px -14px rgba(14, 165, 233, 0.4);
+  transform: translateY(-2px);
+}
+.skill-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.skill-card-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.skill-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #171719;
+}
+.skill-card-desc {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #667085;
+  line-height: 1.6;
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.skill-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.skill-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 10px;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 8px;
+}
+
+/* 技能编辑弹窗字段 */
+.skill-field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #344054;
+  margin-bottom: 6px;
+}
+.skill-field-tip {
+  font-weight: 400;
+  color: #98a2b3;
+  margin-left: 8px;
+  font-size: 12px;
+}
+.skill-icon-pick {
+  width: 38px;
+  height: 38px;
+  font-size: 20px;
+  border: 1px solid #e4e7ec;
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.skill-icon-pick:hover {
+  border-color: #7c9cff;
+}
+.skill-icon-pick.active {
+  border-color: #155eef;
+  background: #eef4ff;
+}
+
+/* ── 对话页：技能选择器 + 快捷提问 ── */
+.chat-skill-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.chat-skill-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 999px;
+  background: #fff;
+  color: #475467;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.chat-skill-trigger:hover {
+  border-color: #7c9cff;
+  color: #155eef;
+}
+.chat-skill-trigger.on {
+  border-color: #155eef;
+  background: #eef4ff;
+  color: #155eef;
+  font-weight: 500;
+}
+.chat-skill-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: #f2f4f7;
+  color: #98a2b3;
+  cursor: pointer;
+  font-size: 11px;
+}
+.chat-skill-clear:hover {
+  background: #ffe7e0;
+  color: #ff5d34;
+}
+.chat-quick-prompt {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 999px;
+  background: #fafbfc;
+  color: #475467;
+  font-size: 13px;
+  cursor: pointer;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.18s ease;
+}
+.chat-quick-prompt:hover:not(:disabled) {
+  border-color: #5cc0ec;
+  color: #0ea5e9;
+  background: #f0f9ff;
+}
+.chat-quick-prompt:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chat-skill-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.chat-skill-opt {
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #344054;
+  transition: background 0.15s ease;
+}
+.chat-skill-opt:hover {
+  background: #f2f4f7;
+}
+.chat-skill-opt.active {
+  background: #eef4ff;
+  color: #155eef;
+  font-weight: 500;
+}
+.chat-skill-empty {
+  padding: 10px;
+  font-size: 12px;
+  color: #98a2b3;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .skill-hero {
+    padding: 20px 18px;
+  }
+  .skill-hero-title {
+    font-size: 21px;
+  }
+  .skill-hero-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .skill-gallery {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .chat-quick-prompt {
+    max-width: 180px;
   }
 }

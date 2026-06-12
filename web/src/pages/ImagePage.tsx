@@ -10,6 +10,7 @@ import {
   Popconfirm,
   Row,
   Segmented,
+  Select,
   Space,
   Spin,
   Tag,
@@ -29,6 +30,7 @@ import {
 } from '@/components/AuthenticatedImage'
 import FavoriteButton from '@/components/FavoriteButton'
 import TagFilterBar from '@/components/TagFilterBar'
+import { useKnowledgeBaseStore } from '@/stores/knowledgeBaseStore'
 import { groupByDate } from './knowledge/helpers'
 
 const { Search } = Input
@@ -126,12 +128,18 @@ export default function ImagePage() {
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState<ViewMode>('时间轴')
   const [activeTag, setActiveTag] = useState<string>()
+  const [activeKb, setActiveKb] = useState<string>()
   const [detail, setDetail] = useState<ImageItem | null>(null)
   const [favMap, setFavMap] = useState<Record<string, string>>({})
   const [searching, setSearching] = useState(false)
   const [hits, setHits] = useState<(ImageSearchHit & { img?: ImageItem })[] | null>(null)
   const [uploading, setUploading] = useState(false)
   const pollRef = useRef<number | null>(null)
+  const { list: kbList, ensureLoaded: ensureKbLoaded } = useKnowledgeBaseStore()
+
+  useEffect(() => {
+    ensureKbLoaded()
+  }, [ensureKbLoaded])
 
   const loadFavorites = async () => {
     try {
@@ -149,7 +157,7 @@ export default function ImagePage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await imageApi.list(1, 60, activeTag)
+      const { data } = await imageApi.list(1, 60, activeTag, activeKb)
       setList(data.items)
       loadFavorites()
     } catch (e) {
@@ -157,7 +165,7 @@ export default function ImagePage() {
     } finally {
       setLoading(false)
     }
-  }, [activeTag])
+  }, [activeTag, activeKb])
 
   const onFavChange = (id: string, favId: string | null) => {
     setFavMap((prev) => {
@@ -207,7 +215,7 @@ export default function ImagePage() {
     setUploading(true)
     const hide = message.loading(`正在上传「${file.name}」，请稍候…`, 0)
     try {
-      await imageApi.upload(file)
+      await imageApi.upload(file, activeKb)
       hide()
       message.success('上传成功，正在识别')
       setHits(null)
@@ -295,7 +303,20 @@ export default function ImagePage() {
             </Upload.Dragger>
 
             <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }}>
-              <TagFilterBar active={activeTag} scope="image" onChange={setActiveTag} />
+              <Space wrap>
+                <Select
+                  allowClear
+                  placeholder="全部知识库"
+                  value={activeKb}
+                  onChange={(v) => setActiveKb(v)}
+                  style={{ minWidth: 150 }}
+                  options={kbList.map((k) => ({
+                    value: k.id,
+                    label: `${k.icon || '📁'} ${k.name}`,
+                  }))}
+                />
+                <TagFilterBar active={activeTag} scope="image" onChange={setActiveTag} />
+              </Space>
               <Segmented
                 options={['时间轴', '网格']}
                 value={view}

@@ -79,6 +79,7 @@ async def _parse(session: AsyncSession, document_id: str, doc_uuid: uuid.UUID) -
         # 4. 子块向量化（用用户默认 embedding 模型）
         embed_client = await get_client_for_type(session, doc.user_id, "embedding")
         user_id = str(doc.user_id)
+        kb_id = str(doc.kb_id) if doc.kb_id else None
         es_docs: list[dict] = []
         chunk_total = 0
         for parent in parents:
@@ -90,6 +91,7 @@ async def _parse(session: AsyncSession, document_id: str, doc_uuid: uuid.UUID) -
                 chunk_type=CHUNK_TYPE_PARENT,
                 content=parent.content,
                 vector=None,
+                kb_id=kb_id,
             )
             parent_chunk_id = parent_doc["_id"]
             es_docs.append(parent_doc)
@@ -107,6 +109,7 @@ async def _parse(session: AsyncSession, document_id: str, doc_uuid: uuid.UUID) -
                             content=child,
                             vector=vec,
                             parent_id=parent_chunk_id,
+                            kb_id=kb_id,
                         )
                     )
                     chunk_total += 1

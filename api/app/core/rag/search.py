@@ -37,11 +37,15 @@ async def hybrid_search(
     tags: list[str] | None = None,
     source_type: str | None = None,
     min_vector_score: float | None = None,
+    kb_ids: list[str] | None = None,
 ) -> list[dict]:
     """混合检索，返回 top_k 个结果（含 content / doc_name / source_id / score）。
 
     source_type 可选 document / image，在 ES 召回阶段就过滤，避免跨类型互相淹没。
     文档检索命中 child 子块（再取父块上下文）；图片检索命中 image_desc 块。
+
+    kb_ids 不为空时限定只检索这些知识库的内容（对话时取"已启用检索"的库集合）。
+    传入空列表 [] 表示没有任何启用的库 → 直接返回空（不检索）。
 
     min_vector_score 不为 None 时启用「绝对相关度门控」（精确导向，用于全局搜索）：
     只保留 BM25 命中 或 向量原始余弦得分 ≥ 阈值的结果，丢弃不相关的最近邻噪声。
@@ -62,6 +66,8 @@ async def hybrid_search(
         {"term": {"user_id": uid}},
         {"terms": {"chunk_type": chunk_types}},
     ]
+    if kb_ids is not None:
+        base_filter.append({"terms": {"kb_id": kb_ids}})
     if tags:
         base_filter.append({"terms": {"tags": tags}})
     if source_type:
