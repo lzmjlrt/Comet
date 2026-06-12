@@ -27,7 +27,12 @@ from app.core.agent.group_chat import (
     stream_speaker,
 )
 from app.core.exceptions import BizError
-from app.core.llm.chat_model import build_default_chat_model, supports_function_call
+from app.core.llm.chat_model import (
+    build_chat_model,
+    build_default_chat_model,
+    get_default_config_for_type,
+    supports_function_call,
+)
 from app.core.logging import get_logger
 from app.core.storage import get_storage
 from app.models.conversation_model import (
@@ -178,12 +183,16 @@ class GroupChatService:
             member_names = [m["name"] for m in members]
             name_to_member = {m["name"]: m for m in members}
 
+            # 本轮图片（多模态看图）：存进 user 消息 meta_data，供历史还原与分享
+            image_keys = list(body.image_keys or [])
+            user_meta = {"image_keys": image_keys} if image_keys else None
             # 落库用户消息
             await self.msg_repo.add(
                 Message(
                     conversation_id=conv.id,
                     role=ROLE_USER,
                     content=user_text,
+                    meta_data=user_meta,
                 )
             )
 
@@ -244,6 +253,25 @@ class GroupChatService:
                 logger.warning("群聊工具构建失败（降级为纯对话）: %s", e)
                 tools = []
 
+        # 本轮带图：切多模态模型 + 预读图片为内容块（每个角色看同一组图发言）
+        image_parts: list[dict] = []
+        if image_keys:
+            try:
+                mm_config = await get_default_config_for_type(
+                    self.session, user_id, "multimodal", "多模态"
+                )
+                speaker_model = build_chat_model(
+                    mm_config, temperature=0.8, streaming=True
+                )
+                self._speaker_config = mm_config
+                image_parts = await self._load_image_parts(image_keys)
+            except BizError as e:
+                yield _sse("error", {"message": e.message})
+                return
+            except Exception as e:
+                logger.warning("群聊多模态准备失败（降级为纯文本）: %s", e)
+                image_parts = []
+
         for name in speakers:
             member = name_to_member.get(name)
             if not member:
@@ -265,6 +293,7 @@ class GroupChatService:
                     member_names,
                     transcript,
                     tools,
+                    image_parts,
                 ):
                     if ev["type"] == "token":
                         full_text += ev["text"]
@@ -321,6 +350,30 @@ class GroupChatService:
         await self.conv_repo.touch(conv.id)
         yield _sse("done", {"conversation_id": str(conv.id)})
 
+    async def _load_image_parts(self, image_keys: list[str]) -> list[dict]:
+        """读图片并压缩成多模态内容块（LangChain image_url 格式）。"""
+        import base64
+        from pathlib import Path
+
+        from app.core.rag.image_compress import compress_for_vision
+
+        storage = get_storage()
+        parts: list[dict] = []
+        for key in image_keys[:4]:  # 单轮最多 4 张
+            try:
+                raw = await storage.get(key)
+                data, mime = compress_for_vision(raw, Path(key).suffix)
+                b64 = base64.b64encode(data).decode()
+                parts.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64}"},
+                    }
+                )
+            except Exception as e:
+                logger.warning("群聊读取/压缩图片失败（跳过）: %s", e)
+        return parts
+
     async def _speak(
         self,
         model,
@@ -328,12 +381,21 @@ class GroupChatService:
         member_names: list[str],
         transcript: str,
         tools: list,
+        image_parts: list[dict] | None = None,
     ) -> AsyncGenerator[dict, None]:
-        """让单个角色发言：无工具走纯流式，有工具走编排（function calling / ReAct）。
+        """让单个角色发言。
 
-        统一产出 orchestrator 风格事件 dict（token / tool_start / tool_result / final）。
+        - 无图无工具：纯人设流式。
+        - 有工具（且模型支持 function calling）：走编排，可调知识库/记忆/联网/MCP。
+        - 有图：发言消息带图片内容块，让角色看图分析；与工具可叠加（多模态模型支持
+          function calling 时边看图边调工具，如发股票图各角色联网查实时行情分析）。
         """
-        # 角色发言的 system prompt（人设 + 群聊场景说明 + 当前日期），与纯对话一致
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from app.core.agent.orchestrator import run_function_calling, run_react
+
+        image_parts = image_parts or []
+        # 角色发言的 system prompt（人设 + 群聊场景说明 + 当前日期）
         sys_messages = build_speaker_messages(
             member["system_prompt"],
             member["name"],
@@ -342,40 +404,72 @@ class GroupChatService:
             with_tool_hint=bool(tools),
         )
         system_prompt = sys_messages[0].content if sys_messages else ""
+        turn_text = f"现在轮到你「{member['name']}」发言，请基于上面的群聊记录自然接话。"
 
-        if not tools:
-            # 纯人设流式
+        # 纯人设、无图：直接流式
+        if not tools and not image_parts:
             async for token in stream_speaker(
                 model, member["system_prompt"], member["name"], member_names, transcript
             ):
                 yield {"type": "token", "text": token}
             return
 
-        # 带工具：角色发言时把「现在轮到你发言」作为本轮 user 指令喂编排器
-        from langchain_core.messages import HumanMessage, SystemMessage
+        # 构造本轮 user 消息：带图时用多模态内容块（文字 + 图）
+        if image_parts:
+            human_content: object = [{"type": "text", "text": turn_text}, *image_parts]
+        else:
+            human_content = turn_text
 
-        from app.core.agent.orchestrator import run_function_calling, run_react
+        can_tool = bool(tools) and supports_function_call(self._speaker_config)
 
-        turn_prompt = f"现在轮到你「{member['name']}」发言，请基于上面的群聊记录自然接话。"
-        if supports_function_call(self._speaker_config):
+        if tools and not can_tool:
+            # 模型不支持 function calling：ReAct 不便带图，带图时退化为看图直答
+            if image_parts:
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=human_content),
+                ]
+                async for chunk in model.astream(messages):
+                    if chunk.content:
+                        text = (
+                            chunk.content
+                            if isinstance(chunk.content, str)
+                            else str(chunk.content)
+                        )
+                        yield {"type": "token", "text": text}
+                return
+            async for ev in run_react(
+                model, tools, turn_text, [], system_prompt,
+                stats_holder=self._tool_stats,
+            ):
+                yield ev
+            return
+
+        if can_tool:
+            # 看图 + 调工具（function calling 循环；图随首条 user 消息传入）
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=turn_prompt),
+                HumanMessage(content=human_content),
             ]
             async for ev in run_function_calling(
                 model, tools, messages, stats_holder=self._tool_stats
             ):
                 yield ev
-        else:
-            async for ev in run_react(
-                model,
-                tools,
-                turn_prompt,
-                [],
-                system_prompt,
-                stats_holder=self._tool_stats,
-            ):
-                yield ev
+            return
+
+        # 仅看图、无工具：多模态直答
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=human_content),
+        ]
+        async for chunk in model.astream(messages):
+            if chunk.content:
+                text = (
+                    chunk.content
+                    if isinstance(chunk.content, str)
+                    else str(chunk.content)
+                )
+                yield {"type": "token", "text": text}
 
 
 __all__ = ["GroupChatService"]

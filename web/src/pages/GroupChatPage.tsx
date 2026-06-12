@@ -11,12 +11,16 @@ import {
   Switch,
   Tag,
   Tooltip,
+  Upload,
   message as antdMessage,
 } from 'antd'
 import type { InputRef } from 'antd'
 import {
+  ArrowUpOutlined,
+  CloseCircleFilled,
   DeleteOutlined,
   MenuOutlined,
+  PictureOutlined,
   PlusOutlined,
   SendOutlined,
   ShareAltOutlined,
@@ -50,6 +54,7 @@ interface GroupUiMessage {
   senderPersonaId?: string | null
   senderName?: string | null
   toolRuns?: GroupToolRun[]
+  images?: string[]
   streaming?: boolean
 }
 
@@ -127,6 +132,10 @@ export default function GroupChatPage() {
   const [members, setMembers] = useState<GroupMember[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [pendingImages, setPendingImages] = useState<{ key: string; url: string }[]>(
+    [],
+  )
+  const [uploading, setUploading] = useState(false)
   const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [listOpen, setListOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -184,6 +193,7 @@ export default function GroupChatPage() {
           content: m.content,
           senderPersonaId: (m as { sender_persona_id?: string }).sender_persona_id,
           senderName: (m as { sender_name?: string }).sender_name,
+          images: (m as { images?: string[] }).images,
           toolRuns: (m.meta_data?.tool_calls as GroupToolRun[] | undefined)?.map(
             (t) => ({ tool: t.tool, query: t.query, status: 'success' }),
           ),
@@ -222,20 +232,61 @@ export default function GroupChatPage() {
     setTimeout(() => inputRef.current?.focus(), 0)
   }
 
+  const onInputKeyDown = (e: React.KeyboardEvent) => {
+    if (mentionOpen && mentionCandidates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionIndex((i) => (i + 1) % mentionCandidates.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionIndex(
+          (i) => (i - 1 + mentionCandidates.length) % mentionCandidates.length,
+        )
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        applyMention(mentionCandidates[mentionIndex].name)
+        return
+      }
+      if (e.key === 'Escape') {
+        setMentionOpen(false)
+        return
+      }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
   const handleSend = async () => {
     const text = input.trim()
-    if (!text || !activeId || sending) return
+    if ((!text && pendingImages.length === 0) || !activeId || sending) return
     setInput('')
     setMentionOpen(false)
     setSending(true)
+    const imgs = pendingImages
+    setPendingImages([])
+    // 先放用户消息（带图）
     setMessages((prev) => [
       ...prev,
-      { id: `u-${Date.now()}`, role: 'user', content: text },
+      {
+        id: `u-${Date.now()}`,
+        role: 'user',
+        content: text,
+        images: imgs.map((i) => i.url),
+      },
     ])
 
     let currentId: string | null = null
     try {
-      await streamGroupChat(activeId, text, {
+      await streamGroupChat(
+        activeId,
+        text || '（看图）',
+        {
         onSpeakerStart: (d) => {
           currentId = `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
           setMessages((prev) => [
@@ -301,13 +352,29 @@ export default function GroupChatPage() {
         onError: (msg) => {
           antdMessage.error(msg)
         },
-      })
+      },
+        undefined,
+        imgs.map((i) => i.key),
+      )
       loadConversations()
     } catch {
       antdMessage.error('群聊发送失败')
     } finally {
       setSending(false)
     }
+  }
+
+  const handleUploadImage = async (file: File) => {
+    setUploading(true)
+    try {
+      const { data } = await chatApi.uploadImage(file)
+      setPendingImages((prev) => [...prev, { key: data.file_key, url: data.url }])
+    } catch (e) {
+      antdMessage.error((e as Error).message)
+    } finally {
+      setUploading(false)
+    }
+    return Upload.LIST_IGNORE
   }
 
   const handleDelete = (id: string) => {
@@ -490,7 +557,23 @@ export default function GroupChatPage() {
               if (m.role === 'user') {
                 return (
                   <div key={m.id} className="gc-row gc-row--user">
-                    <div className="gc-bubble gc-bubble--user">{m.content}</div>
+                    <div className="gc-user-block">
+                      {m.images && m.images.length > 0 && (
+                        <div className="gc-msg-images">
+                          {m.images.map((url, i) => (
+                            <AuthenticatedImage
+                              key={i}
+                              src={url}
+                              alt=""
+                              className="gc-msg-image"
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {m.content && (
+                        <div className="gc-bubble gc-bubble--user">{m.content}</div>
+                      )}
+                    </div>
                     <PersonaAvatar
                       name={user?.nickname || user?.username || '我'}
                       avatarUrl={user?.avatar}
@@ -548,6 +631,22 @@ export default function GroupChatPage() {
         {activeId && (
           <div className="gc-input-wrap">
             <div className="gc-input-inner">
+            {/* 待发送图片预览 */}
+            {pendingImages.length > 0 && (
+              <div className="gc-pending-images">
+                {pendingImages.map((img, i) => (
+                  <div key={i} className="gc-pending-image">
+                    <AuthenticatedImage src={img.url} alt="" />
+                    <CloseCircleFilled
+                      className="gc-pending-del"
+                      onClick={() =>
+                        setPendingImages((prev) => prev.filter((_, idx) => idx !== i))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
             {/* @ 提及下拉 */}
             {mentionOpen && mentionCandidates.length > 0 && (
               <div className="gc-mention-pop">
@@ -568,62 +667,93 @@ export default function GroupChatPage() {
                 ))}
               </div>
             )}
-            <div className="gc-input-bar">
+            {isMobile ? (
+              // 手机端：单行紧凑 —— [🖼图片] [输入框] [↑发送]
+              <div className="gc-input-box gc-input-box--mobile">
+                <Upload
+                  accept="image/*"
+                  showUploadList={false}
+                  beforeUpload={handleUploadImage}
+                  disabled={uploading || sending}
+                >
+                  <Button
+                    type="text"
+                    shape="circle"
+                    icon={<PictureOutlined style={{ fontSize: 18 }} />}
+                    loading={uploading}
+                    style={{ flexShrink: 0 }}
+                  />
+                </Upload>
+                <Input.TextArea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => handleInputChange(e.target.value)}
+                  placeholder="说点什么…（@ 指定成员）"
+                  autoSize={{ minRows: 1, maxRows: 4 }}
+                  variant="borderless"
+                  className="gc-textarea"
+                  style={{ fontSize: 16, padding: '4px 0', resize: 'none', flex: 1 }}
+                  onKeyDown={onInputKeyDown}
+                  disabled={sending}
+                />
+                <Button
+                  type="primary"
+                  shape="circle"
+                  icon={<ArrowUpOutlined />}
+                  loading={sending}
+                  onClick={handleSend}
+                  disabled={!input.trim() && pendingImages.length === 0}
+                  style={{ flexShrink: 0 }}
+                />
+              </div>
+            ) : (
+            <div className="gc-input-box">
               <Input.TextArea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => handleInputChange(e.target.value)}
                 placeholder="说点什么…（输入 @ 可指定成员回答）"
-                autoSize={{ minRows: 2, maxRows: 8 }}
+                autoSize={{ minRows: 1, maxRows: 6 }}
                 variant="borderless"
                 className="gc-textarea"
                 style={{ fontSize: 16, padding: 0, resize: 'none' }}
-                onKeyDown={(e) => {
-                  if (mentionOpen && mentionCandidates.length > 0) {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault()
-                      setMentionIndex((i) => (i + 1) % mentionCandidates.length)
-                      return
-                    }
-                    if (e.key === 'ArrowUp') {
-                      e.preventDefault()
-                      setMentionIndex(
-                        (i) =>
-                          (i - 1 + mentionCandidates.length) %
-                          mentionCandidates.length,
-                      )
-                      return
-                    }
-                    if (e.key === 'Enter' || e.key === 'Tab') {
-                      e.preventDefault()
-                      applyMention(mentionCandidates[mentionIndex].name)
-                      return
-                    }
-                    if (e.key === 'Escape') {
-                      setMentionOpen(false)
-                      return
-                    }
-                  }
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    handleSend()
-                  }
-                }}
+                onKeyDown={onInputKeyDown}
                 disabled={sending}
               />
-              <Button
-                type="primary"
-                shape="circle"
-                icon={<SendOutlined />}
-                loading={sending}
-                onClick={handleSend}
-                disabled={!input.trim()}
-                className="gc-send-btn"
-              />
+              <div className="gc-input-toolbar">
+                <Upload
+                  accept="image/*"
+                  showUploadList={false}
+                  beforeUpload={handleUploadImage}
+                  disabled={uploading || sending}
+                >
+                  <Tooltip title="上传图片（每个角色看图发言）">
+                    <Button
+                      type="text"
+                      icon={<PictureOutlined style={{ fontSize: 19 }} />}
+                      loading={uploading}
+                    />
+                  </Tooltip>
+                </Upload>
+                <Button
+                  type="primary"
+                  size="large"
+                  icon={<SendOutlined />}
+                  loading={sending}
+                  onClick={handleSend}
+                  disabled={!input.trim() && pendingImages.length === 0}
+                  className="gc-send-btn"
+                >
+                  发送
+                </Button>
+              </div>
             </div>
-            <div className="gc-input-tip">
-              Enter 发送 · Shift+Enter 换行 · @ 指定成员
-            </div>
+            )}
+            {!isMobile && (
+              <div className="gc-input-tip">
+                Enter 发送 · Shift+Enter 换行 · @ 指定成员
+              </div>
+            )}
             </div>
           </div>
         )}
@@ -715,7 +845,7 @@ function CreateGroupModal({
       confirmLoading={submitting}
       width={560}
     >
-      <p style={{ color: '#667085', marginTop: 0 }}>
+      <p style={{ color: '#667085', marginTop: 0, marginBottom: 18, lineHeight: 1.7 }}>
         选择 2~5 个角色卡组成群聊。提问后由「主持人」自动调度谁来回答，也可在对话里 @
         指定角色。
       </p>
@@ -740,7 +870,7 @@ function CreateGroupModal({
           <Spin />
         </div>
       ) : personas.length === 0 ? (
-        <Empty description="还没有角色卡，请先到 Agent 配置里创建" />
+        <Empty description="还没有角色卡，请先到 角色配置 里创建" />
       ) : (
         <div className="gc-persona-grid">
           {personas.map((p) => {

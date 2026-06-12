@@ -56,12 +56,29 @@ class ConversationService:
             user_id, conv_id
         )
         rating_by_msg = {str(f.message_id): f.rating for f in feedbacks}
+
+        # 把 user 消息里存的图片 key 转成可访问 url（历史还原图片显示）
+        from app.core.storage import get_storage
+
+        storage = get_storage()
+
+        def _image_urls(meta: dict | None) -> list[str]:
+            keys = (meta or {}).get("image_keys") or []
+            urls: list[str] = []
+            for k in keys:
+                try:
+                    urls.append(storage.get_url(k))
+                except Exception:
+                    continue
+            return urls
+
         return [
             {
                 "id": str(m.id),
                 "role": m.role,
                 "content": m.content,
                 "meta_data": m.meta_data,
+                "images": _image_urls(m.meta_data),
                 "sender_persona_id": str(m.sender_persona_id)
                 if m.sender_persona_id
                 else None,

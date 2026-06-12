@@ -3280,6 +3280,115 @@ body {
   }
 }
 
+/* ── 全局弹窗（Modal）统一美化 ── */
+.ant-modal .ant-modal-content {
+  border-radius: 16px;
+  padding: 22px 24px 20px;
+  box-shadow:
+    0 24px 48px -12px rgba(16, 24, 40, 0.18),
+    0 0 0 1px rgba(16, 24, 40, 0.04);
+}
+.ant-modal .ant-modal-header {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f0f1f4;
+}
+.ant-modal .ant-modal-body {
+  padding-top: 2px;
+}
+.ant-modal .ant-modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1d2939;
+  letter-spacing: 0.2px;
+}
+/* 关闭按钮：圆形浅底，hover 变深 */
+.ant-modal .ant-modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  top: 18px;
+  inset-inline-end: 18px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ant-modal .ant-modal-close:hover {
+  background: #f2f4f7;
+}
+.ant-modal .ant-modal-close-x {
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  font-size: 15px;
+  color: #98a2b3;
+}
+/* 底部按钮区：与内容拉开距离 + 按钮更圆润 */
+.ant-modal .ant-modal-footer {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f1f4;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.ant-modal .ant-modal-footer .ant-btn {
+  border-radius: 9px;
+  min-width: 76px;
+  height: 38px;
+}
+.ant-modal .ant-modal-footer .ant-btn + .ant-btn {
+  margin-inline-start: 0;
+}
+/* 弹窗内输入框：更高、圆角、聚焦蓝光圈，与整体精致感统一 */
+.ant-modal .ant-input,
+.ant-modal .ant-input-affix-wrapper,
+.ant-modal .ant-input-number,
+.ant-modal .ant-picker,
+.ant-modal .ant-select .ant-select-selector {
+  border-radius: 10px;
+}
+.ant-modal .ant-input,
+.ant-modal .ant-input-affix-wrapper,
+.ant-modal .ant-select-single .ant-select-selector {
+  min-height: 40px;
+}
+.ant-modal .ant-input:hover,
+.ant-modal .ant-input-affix-wrapper:hover,
+.ant-modal .ant-select:hover .ant-select-selector {
+  border-color: #adc6ff;
+}
+.ant-modal textarea.ant-input {
+  min-height: auto;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+/* 表单项标签与控件间距更舒展 */
+.ant-modal .ant-form-item {
+  margin-bottom: 18px;
+}
+.ant-modal .ant-form-item-label > label {
+  font-weight: 500;
+  color: #344054;
+}
+/* 确认类对话框（Modal.confirm）图标与文字间距更舒展 */
+.ant-modal-confirm .ant-modal-confirm-body {
+  align-items: flex-start;
+}
+.ant-modal-confirm .ant-modal-confirm-title {
+  font-weight: 700;
+  color: #1d2939;
+}
+.ant-modal-confirm .ant-modal-confirm-btns {
+  margin-top: 22px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn {
+  border-radius: 9px;
+  min-width: 72px;
+  height: 36px;
+}
+
 /* 手机端：写死 width 的弹窗（如 680px 的编辑弹窗）限宽，避免横向溢出 */
 @media (max-width: 768px) {
   /* 用 flex 让弹窗在视口内真正居中，避免 margin:auto 在滚动容器里失效导致左溢出 */
@@ -3492,6 +3601,19 @@ body {
   color: #667085;
   font-weight: 600;
   padding-left: 2px;
+}
+.share-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.share-image {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid #eef0f4;
 }
 .share-footer {
   text-align: center;
@@ -3780,6 +3902,62 @@ body {
   gap: 5px;
   min-width: 0;
 }
+.gc-user-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+.gc-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.gc-msg-image {
+  max-width: 160px;
+  max-height: 160px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid #eef0f4;
+}
+.gc-pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.gc-pending-image {
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+.gc-pending-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e6e9ef;
+}
+.gc-pending-del {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  color: #98a2b3;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+}
+.gc-pending-del:hover {
+  color: #ff5d34;
+}
+.gc-upload-btn {
+  flex-shrink: 0;
+  color: #667085;
+  align-self: flex-end;
+}
 .gc-sender-name {
   font-size: 12.5px;
   color: #667085;
@@ -3873,20 +4051,32 @@ body {
   width: 100%;
   margin: 0 auto;
 }
-.gc-input-bar {
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-  background: #fff;
+/* 输入卡片（与单聊一致：TextArea 占整行 + 底部工具栏） */
+.gc-input-box {
   border: 1px solid #e4e7ec;
   border-radius: 18px;
-  padding: 12px 12px 12px 18px;
-  box-shadow: 0 2px 10px -6px rgba(16, 24, 40, 0.12);
+  padding: 12px 16px;
+  background: #fff;
+  box-shadow: 0 6px 22px -10px rgba(16, 24, 40, 0.12);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.gc-input-bar:focus-within {
+.gc-input-box:focus-within {
   border-color: #adc6ff;
   box-shadow: 0 8px 26px -8px rgba(21, 94, 239, 0.22);
+}
+.gc-input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+/* 手机端单行紧凑输入框 */
+.gc-input-box--mobile {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 22px;
 }
 .gc-textarea.ant-input {
   background: transparent;
@@ -3895,11 +4085,7 @@ body {
   resize: none;
 }
 .gc-send-btn {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px -4px rgba(21, 94, 239, 0.5);
 }
 .gc-input-tip {
   margin-top: 8px;
@@ -3985,17 +4171,29 @@ body {
 
 @media (max-width: 768px) {
   .gc-row {
-    max-width: 92%;
+    max-width: 96%;
   }
   .gc-header,
-  .gc-messages,
-  .gc-input-bar {
-    padding-left: 14px;
-    padding-right: 14px;
+  .gc-messages {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .gc-input-wrap {
+    padding: 10px 12px 12px;
+  }
+  .gc-input-box--mobile {
+    padding: 6px 8px 6px 10px;
+    border-radius: 22px;
+  }
+  .gc-textarea.ant-input {
+    font-size: 15px;
+  }
+  .gc-input-tip {
+    display: none;
   }
   .gc-mention-pop {
-    left: 14px;
-    right: 14px;
+    left: 0;
+    right: 0;
     width: auto;
   }
   .gc-persona-grid {
@@ -4003,5 +4201,9 @@ body {
   }
   .gc-header-members {
     display: none;
+  }
+  .gc-msg-image {
+    max-width: 120px;
+    max-height: 120px;
   }
 }

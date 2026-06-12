@@ -67,7 +67,7 @@ const menuItems = [
     label: '设置',
     children: [
       { key: '/settings/models', icon: <SettingOutlined />, label: '模型配置' },
-      { key: '/settings/agent', icon: <RobotOutlined />, label: 'Agent 配置' },
+      { key: '/settings/agent', icon: <RobotOutlined />, label: '角色配置' },
       { key: '/settings/skills', icon: <ThunderboltOutlined />, label: '技能' },
       { key: '/settings/tools', icon: <ToolOutlined />, label: '工具配置' },
     ],

@@ -17,3 +17,5 @@ class GroupChatStreamRequest(BaseModel):
 
     conversation_id: uuid.UUID
     message: str = Field(..., min_length=1)
+    # 多模态：图片 file_key 列表（带图时每个角色用多模态模型看图发言）
+    image_keys: list[str] = Field(default_factory=list)

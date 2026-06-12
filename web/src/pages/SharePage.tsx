@@ -83,8 +83,17 @@ export default function SharePage() {
                 <div className="share-bubble-wrap">
                   {!isUser && aiName && <div className="share-sender">{aiName}</div>}
                   <div className="share-bubble">
+                    {m.images && m.images.length > 0 && (
+                      <div className="share-images">
+                        {m.images.map((src, k) => (
+                          <img key={k} src={src} alt="" className="share-image" />
+                        ))}
+                      </div>
+                    )}
                     {isUser ? (
-                      <span style={{ whiteSpace: 'pre-wrap' }}>{m.content}</span>
+                      m.content && (
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{m.content}</span>
+                      )
                     ) : (
                       <MarkdownMessage content={m.content} />
                     )}

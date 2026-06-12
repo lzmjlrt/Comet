@@ -57,10 +57,12 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  images?: string[]
   meta_data: {
     citations?: Citation[]
     tool_calls?: ToolCall[]
     attachments?: { file_name: string; text?: string }[]
+    image_keys?: string[]
   } | null
   feedback?: 'up' | 'down' | null
   created_at: string
@@ -196,6 +198,7 @@ export async function streamGroupChat(
   message: string,
   handlers: GroupStreamHandlers,
   signal?: AbortSignal,
+  imageKeys?: string[],
 ): Promise<void> {
   const token = localStorage.getItem('access_token')
   const resp = await fetch('/api/groups/chat/stream', {
@@ -204,7 +207,11 @@ export async function streamGroupChat(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ conversation_id: conversationId, message }),
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      message,
+      image_keys: imageKeys ?? [],
+    }),
     signal,
   })
   if (!resp.ok || !resp.body) {

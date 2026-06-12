@@ -131,7 +131,7 @@ export default function HomePage() {
     { icon: <BookOutlined />, label: '知识库', desc: '文档/网页 RAG 检索', to: '/knowledge', color: '#369F21' },
     { icon: <HddOutlined />, label: '记忆图谱', desc: '实体关系与画像', to: '/memory', color: '#7C4DFF' },
     { icon: <DeploymentUnitOutlined />, label: '图谱可视化', desc: '关系网络与时间线', to: '/graph', color: '#FF8A34' },
-    { icon: <RobotOutlined />, label: 'Agent 配置', desc: '人设与工具开关', to: '/settings/agent', color: '#13C2C2' },
+    { icon: <RobotOutlined />, label: '角色配置', desc: '人设与对话偏好', to: '/settings/agent', color: '#13C2C2' },
     { icon: <CustomerServiceOutlined />, label: '情绪音乐', desc: '随心情推荐歌单', to: '/music', color: '#EB2F96' },
   ]
 

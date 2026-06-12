@@ -102,9 +102,13 @@ class ConversationShareService:
             if m.role not in (ROLE_USER, ROLE_ASSISTANT):
                 continue
             content = (m.content or "").strip()
-            if not content:
+            images = await self._snapshot_images(m.meta_data)
+            # 纯图片（无文字）消息也要保留；既无文字又无图才跳过
+            if not content and not images:
                 continue
             item: dict = {"role": m.role, "content": content}
+            if images:
+                item["images"] = images
             # 群聊发言人信息（单聊消息无 sender_persona_id，不受影响）
             if m.role == ROLE_ASSISTANT and m.sender_persona_id:
                 sender_name = (m.meta_data or {}).get("sender_name") if m.meta_data else None
@@ -117,6 +121,59 @@ class ConversationShareService:
                 item["sender_avatar"] = avatar_cache[key]
             snapshot.append(item)
         return snapshot
+
+    async def _snapshot_images(self, meta: dict | None) -> list[str]:
+        """把消息里的图片 key 转成 data URL（公开页无需鉴权直接显示）。
+
+        图片缩到合适尺寸 + JPEG，控制快照体积；失败的逐张跳过。
+        """
+        keys = (meta or {}).get("image_keys") or [] if meta else []
+        if not keys:
+            return []
+        urls: list[str] = []
+        for k in keys[:9]:  # 单条最多 9 张，防快照过大
+            try:
+                data_url = await self._image_data_url(k)
+                if data_url:
+                    urls.append(data_url)
+            except Exception as e:
+                logger.warning("分享图片转 data URL 失败（跳过）: key=%s err=%s", k, e)
+        return urls
+
+    async def _image_data_url(self, file_key: str) -> str | None:
+        """读图片 → 等比缩放（长边≤1024）+ JPEG 重编码 → base64 data URL。"""
+        storage = get_storage()
+        if not await storage.exists(file_key):
+            return None
+        content = await storage.get(file_key)
+        if not content:
+            return None
+        try:
+            import io
+
+            from PIL import Image
+
+            img = Image.open(io.BytesIO(content))
+            if img.mode in ("RGBA", "P", "LA"):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                img = img.convert("RGBA")
+                bg.paste(img, mask=img.split()[-1])
+                img = bg
+            else:
+                img = img.convert("RGB")
+            # 长边限到 1024，等比缩放
+            w, h = img.size
+            longest = max(w, h)
+            if longest > 1024:
+                scale = 1024 / longest
+                img = img.resize((int(w * scale), int(h * scale)))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=80, optimize=True)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            return f"data:image/jpeg;base64,{b64}"
+        except Exception as e:
+            logger.warning("分享图片压缩失败（跳过）: key=%s err=%s", file_key, e)
+            return None
 
     async def _persona_avatar_data_url(self, persona_id: uuid.UUID) -> str | None:
         """按角色卡 id 取头像 data URL（群聊快照用）。失败返回 None。"""

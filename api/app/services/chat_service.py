@@ -76,6 +76,16 @@ class ChatService:
         self.persona_repo = AgentPersonaRepository(session)
         self.skill_repo = SkillRepository(session)
 
+    @staticmethod
+    def _user_meta(attachments: list, image_keys: list[str]) -> dict | None:
+        """组装 user 消息的 meta_data：对话附件 + 图片 key（供历史还原与分享）。"""
+        meta: dict = {}
+        if attachments:
+            meta["attachments"] = attachments
+        if image_keys:
+            meta["image_keys"] = list(image_keys)
+        return meta or None
+
     async def _ensure_conversation(
         self, user_id: uuid.UUID, body: ChatStreamRequest
     ) -> Conversation:
@@ -283,7 +293,7 @@ class ChatService:
                     conversation_id=conv.id,
                     role=ROLE_USER,
                     content=user_text,
-                    meta_data={"attachments": attachments} if attachments else None,
+                    meta_data=self._user_meta(attachments, body.image_keys),
                 )
             )
 
