@@ -267,6 +267,17 @@ class ChatService:
             {"file_name": a.file_name, "text": a.text} for a in body.attachments if a.text
         ]
         if not skip_user_message:
+            # AI 主动开场白（今日回顾「聊聊」）：仅新会话首轮，先把开场白作为 assistant 消息落库，
+            # 使其进入对话历史，模型回复时能接住这个话题。
+            greeting = (body.greeting or "").strip()
+            if greeting and await self.msg_repo.count(conv.id) == 0:
+                await self.msg_repo.add(
+                    Message(
+                        conversation_id=conv.id,
+                        role=ROLE_ASSISTANT,
+                        content=greeting,
+                    )
+                )
             await self.msg_repo.add(
                 Message(
                     conversation_id=conv.id,

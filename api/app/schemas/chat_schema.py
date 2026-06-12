@@ -24,6 +24,9 @@ class ChatStreamRequest(BaseModel):
 
     conversation_id: uuid.UUID | None = None
     message: str = Field(..., min_length=1)
+    # AI 主动开场白（今日回顾「聊聊」带入）：新会话首轮时先作为 assistant 消息落库，
+    # 使其进入对话历史，模型能接住这个话题。仅 conversation_id 为空（新会话）时生效。
+    greeting: str | None = Field(default=None, max_length=2000)
     # 本轮挂载的技能 id（任务能力包，override 提示词/工具白名单/知识库范围）；None=不挂载
     skill_id: uuid.UUID | None = None
     # 多模态：图片 file_key 列表（阶段5 第③步接入）

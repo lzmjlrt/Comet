@@ -91,6 +91,7 @@ export default function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const inputRef = useRef<{ focus: () => void } | null>(null)
+  const pendingGreetingRef = useRef<string | null>(null)
   const groupsInited = useRef(false)
 
   const convGroups = groupConversationsByDate(conversations)
@@ -247,15 +248,23 @@ export default function ChatPage() {
   useEffect(() => {
     const conv = params.get('conversation')
     const msg = params.get('message')
-    const prefill = params.get('prefill')
+    const greeting = params.get('greeting')
     if (conv) {
       openConversation(conv, msg ?? undefined)
       setParams({}, { replace: true })
-    } else if (prefill) {
-      // 从今日回顾「聊聊」跳来：新开对话并把关怀句预填进输入框
+    } else if (greeting) {
+      // 从今日回顾「聊聊」跳来：AI 主动开场，把关怀句作为 AI 第一句话显示，输入框留空待用户回应。
+      // 记下开场白，用户首次发言时带给后端落库进历史，模型才能接住这个话题。
       newConversation()
-      setInput(prefill)
-      setTimeout(() => inputRef.current?.focus(), 0)
+      pendingGreetingRef.current = greeting
+      setMessages([
+        {
+          id: `greet-${Date.now()}`,
+          role: 'assistant',
+          content: greeting,
+          createdAt: new Date().toISOString(),
+        },
+      ])
       setParams({}, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -503,6 +512,7 @@ export default function ChatPage() {
         conversationId: convId,
         message: text,
         skillId: activeSkillId,
+        greeting: pendingGreetingRef.current,
         imageKeys: imgs.map((i) => i.key),
         attachments: files,
         enableWebSearch: webSearch,
@@ -510,6 +520,7 @@ export default function ChatPage() {
       {
         onMeta: (d) => {
           convId = d.conversation_id
+          pendingGreetingRef.current = null // 开场白只在首轮带一次
           if (!activeId) setActiveId(d.conversation_id)
           setMessages((prev) =>
             prev.map((m) =>

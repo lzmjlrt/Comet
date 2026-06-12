@@ -267,7 +267,7 @@ export default function HomePage() {
               ghost
               icon={<CommentOutlined />}
               onClick={() =>
-                navigate(`/chat?prefill=${encodeURIComponent(review.care ?? '')}`)
+                navigate(`/chat?greeting=${encodeURIComponent(review.care ?? '')}`)
               }
             >
               聊聊
