@@ -33,10 +33,10 @@ export interface SharePublic {
 }
 
 export const shareApi = {
-  create(conversationId: string, expireDays?: number | null) {
+  create(conversationId: string, expireDays?: number | null, title?: string) {
     return client.post<unknown, Wrapped<Share>>(
       `/conversations/${conversationId}/share`,
-      { expire_days: expireDays ?? null },
+      { expire_days: expireDays ?? null, title: title ?? null },
     )
   },
   list() {

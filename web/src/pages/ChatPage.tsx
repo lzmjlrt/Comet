@@ -334,14 +334,20 @@ export default function ChatPage() {
   // 手机端：把「会话历史 / 新对话」操作注册到全局顶栏（替代搜索框，合并成一行）
   const registerChatHeader = useChatHeaderStore((s) => s.register)
   const clearChatHeader = useChatHeaderStore((s) => s.clear)
+  const setCanShare = useChatHeaderStore((s) => s.setCanShare)
   useEffect(() => {
     registerChatHeader({
       openHistory: () => setConvDrawerOpen(true),
       newChat: newConversation,
+      openShare: () => setShareOpen(true),
     })
     return () => clearChatHeader()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // 同步「当前会话是否可分享」给顶栏（手机端分享按钮显隐）
+  useEffect(() => {
+    setCanShare(!!activeId && messages.length > 0)
+  }, [activeId, messages.length, setCanShare])
 
   // 重新生成某条 AI 回复：替换该条消息内容，重新流式
   const onRegenerate = async (target: UiMessage) => {
@@ -718,8 +724,8 @@ export default function ChatPage() {
             </div>
           </div>
         )}
-        {/* 分享当前会话（有消息时显示） */}
-        {activeId && messages.length > 0 && (
+        {/* 分享当前会话（桌面端右上角悬浮；手机端移到顶栏，避免挡对话） */}
+        {!isMobile && activeId && messages.length > 0 && (
           <Tooltip title="分享这段对话">
             <Button
               className="chat-share-btn"
@@ -751,7 +757,7 @@ export default function ChatPage() {
               </div>
             </div>
           ) : (
-            <div className="fluid-narrow" style={{ padding: '0 24px' }}>
+            <div className="chat-fluid" style={{ padding: '0 24px' }}>
               {messages.map((m) => (
                 <div
                   key={m.id}
@@ -777,7 +783,7 @@ export default function ChatPage() {
             isMobile && playerVisible ? ' chat-input-bar--player' : ''
           }`}
         >
-          <div className="fluid-narrow" style={{ padding: '0 24px' }}>
+          <div className="chat-fluid" style={{ padding: '0 24px' }}>
             {/* 技能选择器 + 快捷开场提问 */}
             <div className="chat-skill-bar">
               <Popover

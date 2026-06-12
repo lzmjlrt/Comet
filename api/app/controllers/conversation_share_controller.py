@@ -27,7 +27,9 @@ async def create_share(
     session: AsyncSession = Depends(get_session),
 ):
     service = ConversationShareService(session)
-    share = await service.create_share(user.id, conversation_id, body.expire_days)
+    share = await service.create_share(
+        user.id, conversation_id, body.expire_days, body.title
+    )
     return success(service.share_out(share), "已生成分享链接")
 
 

@@ -3,9 +3,10 @@ from pydantic import BaseModel, Field
 
 
 class ShareCreateRequest(BaseModel):
-    """创建分享。expire_days 为空=永久；可选 7 / 30。"""
+    """创建分享。expire_days 为空=永久；可选 7 / 30。title 为空则用会话标题。"""
 
     expire_days: int | None = Field(default=None)
+    title: str | None = Field(default=None, max_length=256)
 
 
 class ShareOut(BaseModel):

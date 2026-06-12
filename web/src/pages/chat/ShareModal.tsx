@@ -16,6 +16,7 @@ const linkOf = (s: Share) => `${window.location.origin}/s/${s.share_token}`
 export default function ShareModal({ open, conversationId, onClose }: Props) {
   const [share, setShare] = useState<Share | null>(null)
   const [expireDays, setExpireDays] = useState<number | null>(null)
+  const [title, setTitle] = useState('')
   const [loading, setLoading] = useState(false)
   const [list, setList] = useState<Share[]>([])
 
@@ -33,6 +34,7 @@ export default function ShareModal({ open, conversationId, onClose }: Props) {
     if (open) {
       setShare(null)
       setExpireDays(null)
+      setTitle('')
       loadList()
     }
   }, [open, conversationId, loadList])
@@ -46,7 +48,7 @@ export default function ShareModal({ open, conversationId, onClose }: Props) {
     }
     setLoading(true)
     try {
-      const { data } = await shareApi.create(conversationId, expireDays)
+      const { data } = await shareApi.create(conversationId, expireDays, title.trim() || undefined)
       setShare(data)
       message.success('已生成分享链接')
       loadList()
@@ -82,6 +84,16 @@ export default function ShareModal({ open, conversationId, onClose }: Props) {
 
       {!share ? (
         <Space direction="vertical" style={{ width: '100%', marginTop: 8 }}>
+          <div>
+            <span style={{ fontSize: 13, color: '#344054' }}>分享标题</span>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="留空则用会话标题"
+              maxLength={256}
+              style={{ marginTop: 6 }}
+            />
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 13, color: '#344054' }}>有效期</span>
             <Select

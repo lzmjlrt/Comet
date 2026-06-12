@@ -103,7 +103,11 @@ class ConversationShareService:
         return snapshot
 
     async def create_share(
-        self, user_id: uuid.UUID, conversation_id: uuid.UUID, expire_days: int | None
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        expire_days: int | None,
+        title: str | None = None,
     ) -> ConversationShare:
         """创建/刷新分享。同会话已有有效分享则刷新快照复用，否则新建。"""
         conv = await self.conv_repo.get(user_id, conversation_id)
@@ -112,6 +116,8 @@ class ConversationShareService:
         snapshot = await self._build_snapshot(conversation_id)
         if not snapshot:
             raise BizError("会话还没有内容，无法分享", code=4071)
+        # 分享标题：用户自定义优先，否则用会话标题
+        share_title = (title or "").strip() or (conv.title or "对话分享")
 
         expire_at = None
         if expire_days and expire_days > 0:
@@ -141,7 +147,7 @@ class ConversationShareService:
         if existing:
             # 复用：刷新快照、标题、过期时间、头像
             existing.snapshot = snapshot
-            existing.title = conv.title or "对话分享"
+            existing.title = share_title
             existing.expire_at = expire_at
             existing.user_avatar = user_avatar
             existing.ai_avatar = ai_avatar
@@ -154,7 +160,7 @@ class ConversationShareService:
             user_id=user_id,
             conversation_id=conversation_id,
             share_token=secrets.token_urlsafe(16),
-            title=conv.title or "对话分享",
+            title=share_title,
             snapshot=snapshot,
             is_active=True,
             expire_at=expire_at,
