@@ -39,8 +39,11 @@ class ImageRepository:
         page: int,
         page_size: int,
         tag: str | None = None,
+        kb_id: uuid.UUID | None = None,
     ) -> tuple[list[Image], int]:
         base = select(Image).where(Image.user_id == user_id)
+        if kb_id:
+            base = base.where(Image.kb_id == kb_id)
         if tag:
             base = (
                 base.join(image_tags, Image.id == image_tags.c.image_id)
@@ -57,6 +60,13 @@ class ImageRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all()), int(total or 0)
+
+    async def list_by_kb(
+        self, user_id: uuid.UUID, kb_id: uuid.UUID
+    ) -> list[Image]:
+        """取某知识库下全部图片（删库级联清理用）。"""
+        stmt = select(Image).where(Image.user_id == user_id, Image.kb_id == kb_id)
+        return list((await self.session.execute(stmt)).scalars().all())
 
     async def save(self, image: Image) -> Image:
         await self.session.commit()

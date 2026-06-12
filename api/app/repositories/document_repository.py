@@ -36,8 +36,11 @@ class DocumentRepository:
         page: int,
         page_size: int,
         tag: str | None = None,
+        kb_id: uuid.UUID | None = None,
     ) -> tuple[list[Document], int]:
         base = select(Document).where(Document.user_id == user_id)
+        if kb_id:
+            base = base.where(Document.kb_id == kb_id)
         if tag:
             # 按标签名过滤：join 关联表 + tags 表
             base = (
@@ -55,6 +58,15 @@ class DocumentRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all()), int(total or 0)
+
+    async def list_by_kb(
+        self, user_id: uuid.UUID, kb_id: uuid.UUID
+    ) -> list[Document]:
+        """取某知识库下全部文档（删库级联清理用）。"""
+        stmt = select(Document).where(
+            Document.user_id == user_id, Document.kb_id == kb_id
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
 
     async def save(self, doc: Document) -> Document:
         await self.session.commit()

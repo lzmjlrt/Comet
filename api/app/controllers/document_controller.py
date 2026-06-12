@@ -1,7 +1,7 @@
 """知识库文档路由：上传/网页导入/列表/详情/状态/重试/删除/检索。"""
 import uuid
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
@@ -9,6 +9,7 @@ from app.core.response import success
 from app.db.postgres import get_session
 from app.models.user_model import User
 from app.schemas.document_schema import SearchRequest, UrlImportRequest
+from app.schemas.knowledge_base_schema import MoveToKbRequest
 from app.services.document_service import DocumentService
 
 router = APIRouter(prefix="/documents", tags=["document"])
@@ -17,12 +18,13 @@ router = APIRouter(prefix="/documents", tags=["document"])
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
+    kb_id: uuid.UUID | None = Form(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     content = await file.read()
     service = DocumentService(session)
-    doc = await service.upload(user.id, file.filename or "未命名", content)
+    doc = await service.upload(user.id, file.filename or "未命名", content, kb_id)
     return success(await service.to_out_dict(doc), "上传成功，正在解析")
 
 
@@ -33,7 +35,7 @@ async def import_from_url(
     session: AsyncSession = Depends(get_session),
 ):
     service = DocumentService(session)
-    doc = await service.import_url(user.id, body.url)
+    doc = await service.import_url(user.id, body.url, body.kb_id)
     return success(await service.to_out_dict(doc), "导入成功，正在解析")
 
 
@@ -42,11 +44,12 @@ async def list_documents(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     tag: str | None = Query(default=None, description="按标签名筛选"),
+    kb_id: uuid.UUID | None = Query(default=None, description="按知识库筛选"),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     service = DocumentService(session)
-    docs, total = await service.list_documents(user.id, page, page_size, tag)
+    docs, total = await service.list_documents(user.id, page, page_size, tag, kb_id)
     items = [await service.to_out_dict(d) for d in docs]
     return success(
         {"total": total, "page": page, "page_size": page_size, "items": items}
@@ -108,3 +111,15 @@ async def search_documents(
         user.id, body.query, body.top_k, body.tags
     )
     return success(hits)
+
+
+@router.put("/{doc_id}/move")
+async def move_document(
+    doc_id: uuid.UUID,
+    body: MoveToKbRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    service = DocumentService(session)
+    doc = await service.move_to_kb(user.id, doc_id, uuid.UUID(body.kb_id))
+    return success(await service.to_out_dict(doc), "已移动")

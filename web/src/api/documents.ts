@@ -15,6 +15,7 @@ export interface DocTag {
 
 export interface DocumentItem {
   id: string
+  kb_id: string | null
   file_name: string
   file_ext: string
   file_size: number
@@ -45,24 +46,27 @@ export interface SearchHit {
 }
 
 export const documentApi = {
-  list(page = 1, pageSize = 100, tag?: string) {
+  list(page = 1, pageSize = 100, tag?: string, kbId?: string) {
     const q = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
     if (tag) q.set('tag', tag)
+    if (kbId) q.set('kb_id', kbId)
     return client.get<unknown, Wrapped<DocumentListData>>(`/documents?${q.toString()}`)
   },
   // 上传文档（multipart）
-  upload(file: File) {
+  upload(file: File, kbId?: string) {
     const form = new FormData()
     form.append('file', file)
+    if (kbId) form.append('kb_id', kbId)
     return client.post<unknown, Wrapped<DocumentItem>>(
       '/documents/upload',
       form,
       { headers: { 'Content-Type': 'multipart/form-data' } },
     )
   },
-  importUrl(url: string) {
+  importUrl(url: string, kbId?: string) {
     return client.post<unknown, Wrapped<DocumentItem>>('/documents/from-url', {
       url,
+      kb_id: kbId,
     })
   },
   detail(id: string) {
@@ -78,6 +82,11 @@ export const documentApi = {
   },
   remove(id: string) {
     return client.delete<unknown, Wrapped<null>>(`/documents/${id}`)
+  },
+  move(id: string, kbId: string) {
+    return client.put<unknown, Wrapped<DocumentItem>>(`/documents/${id}/move`, {
+      kb_id: kbId,
+    })
   },
   search(query: string, topK = 5, tags?: string[]) {
     return client.post<unknown, Wrapped<SearchHit[]>>('/documents/search', {

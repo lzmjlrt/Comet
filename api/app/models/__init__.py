@@ -11,6 +11,7 @@ from app.models.document_model import Document
 from app.models.emotion_model import EmotionProfile, EmotionRecord
 from app.models.favorite_model import Favorite
 from app.models.image_model import Image
+from app.models.knowledge_base_model import KnowledgeBase
 from app.models.mcp_server_model import MCPServer
 from app.models.memory_model import Memory
 from app.models.message_feedback_model import MessageFeedback
@@ -32,6 +33,7 @@ __all__ = [
     "EmotionRecord",
     "Favorite",
     "Image",
+    "KnowledgeBase",
     "MCPServer",
     "Memory",
     "MessageFeedback",

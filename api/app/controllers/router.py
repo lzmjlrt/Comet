@@ -17,6 +17,7 @@ from app.controllers import (
     file_controller,
     health_controller,
     image_controller,
+    knowledge_base_controller,
     mcp_controller,
     memory_controller,
     model_config_controller,
@@ -32,6 +33,7 @@ api_router.include_router(auth_controller.router)
 api_router.include_router(model_config_controller.router)
 api_router.include_router(document_controller.router)
 api_router.include_router(image_controller.router)
+api_router.include_router(knowledge_base_controller.router)
 api_router.include_router(tag_controller.router)
 api_router.include_router(file_controller.router)
 api_router.include_router(memory_controller.router)

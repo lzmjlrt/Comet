@@ -27,6 +27,13 @@ class Document(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    # 所属知识库（多知识库分类）。删库时整库资料一并删除，故 CASCADE。
+    kb_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     file_name: Mapped[str] = mapped_column(String(512))
     file_ext: Mapped[str] = mapped_column(String(16))
     file_size: Mapped[int] = mapped_column(Integer, default=0)

@@ -82,6 +82,7 @@ async def _process(session: AsyncSession, image_id: str, img_uuid: uuid.UUID) ->
                         chunk_type=CHUNK_TYPE_IMAGE,
                         content=searchable,
                         vector=vector,
+                        kb_id=str(img.kb_id) if img.kb_id else None,
                     )
                 ]
             )

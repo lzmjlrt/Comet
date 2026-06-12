@@ -127,8 +127,21 @@ class ChatService:
             overrides["memory_search"] = body.enable_memory
         if body.enable_web_search is not None:
             overrides["web_search"] = body.enable_web_search
+        # 知识库检索范围：取用户「已启用检索」的库集合（在知识库管理里勾选）
+        from app.repositories.knowledge_base_repository import (
+            KnowledgeBaseRepository,
+        )
+
+        kb_ids = await KnowledgeBaseRepository(self.session).list_chat_enabled_ids(
+            user_id
+        )
         return await build_enabled_tools(
-            self.session, user_id, citations, overrides, stats_holder=stats_holder
+            self.session,
+            user_id,
+            citations,
+            overrides,
+            stats_holder=stats_holder,
+            kb_ids=kb_ids,
         )
 
     async def stream_chat(

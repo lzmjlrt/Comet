@@ -21,6 +21,7 @@ _MAPPING = {
     "mappings": {
         "properties": {
             "user_id": {"type": "keyword"},
+            "kb_id": {"type": "keyword"},  # 所属知识库（多知识库检索范围过滤）
             "source_type": {"type": "keyword"},  # document | image
             "source_id": {"type": "keyword"},  # documents.id / images.id
             "doc_name": {"type": "keyword"},
@@ -51,14 +52,22 @@ _MAPPING = {
 
 
 async def ensure_index() -> None:
-    """确保 comet_chunks 索引存在，不存在则创建。应用启动时调用。"""
+    """确保 comet_chunks 索引存在，不存在则创建；已存在则补齐缺失字段（如 kb_id）。"""
     es = get_es()
     exists = await es.indices.exists(index=CHUNKS_INDEX)
     if not exists:
         await es.indices.create(index=CHUNKS_INDEX, body=_MAPPING)
         logger.info("创建 ES 索引: %s", CHUNKS_INDEX)
-    else:
-        logger.info("ES 索引已存在: %s", CHUNKS_INDEX)
+        return
+    # 已存在：增量补齐新增字段（ES 允许对已有索引 put 新字段，不影响存量）
+    try:
+        await es.indices.put_mapping(
+            index=CHUNKS_INDEX,
+            body={"properties": {"kb_id": {"type": "keyword"}}},
+        )
+        logger.info("ES 索引已存在，已确保 kb_id 字段: %s", CHUNKS_INDEX)
+    except Exception as e:
+        logger.warning("补齐 ES kb_id 字段失败（忽略）: %s", e)
 
 
 __all__ = [

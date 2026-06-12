@@ -16,11 +16,12 @@ async def _build(ctx: ToolBuildContext) -> StructuredTool:
     user_id = ctx.user_id
     citations = ctx.citations
     stats_holder = ctx.stats_holder
+    kb_ids = ctx.kb_ids
 
     async def _run(query: str) -> str:
         from app.core.rag.search import hybrid_search
 
-        hits = await hybrid_search(session, user_id, query, top_k=5)
+        hits = await hybrid_search(session, user_id, query, top_k=5, kb_ids=kb_ids)
         # 统计：命中条数 + 涉及文档数（按 doc_name 去重；无名时按 source_id）
         doc_keys = {(h.get("doc_name") or h.get("source_id")) for h in hits if h}
         stats_holder[KEY] = {
