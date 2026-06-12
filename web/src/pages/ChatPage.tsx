@@ -24,6 +24,7 @@ import {
   PlusOutlined,
   RightOutlined,
   SendOutlined,
+  ShareAltOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons'
 import {
@@ -38,6 +39,8 @@ import {
 import { favoriteApi } from '@/api/favorites'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
 import MessageItem from './chat/MessageItem'
+import SelectionPopover from './chat/SelectionPopover'
+import ShareModal from './chat/ShareModal'
 import type { ChatAvatars, UiMessage } from './chat/types'
 import { groupConversationsByDate } from './chat/groupByDate'
 import { useMusicStore } from '@/stores/musicStore'
@@ -72,6 +75,7 @@ export default function ChatPage() {
     () => typeof window !== 'undefined' && window.innerWidth <= 768,
   )
   const [convDrawerOpen, setConvDrawerOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   // 播放器可见时，输入区在手机上需上移避让
   const playerVisible = useMusicStore((s) => s.visible)
   // 技能（任务能力包）：对话中可挂载/切换
@@ -82,6 +86,8 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const activeSkill = skills.find((s) => s.id === activeSkillId) ?? null
+  // 只在对话框技能选择器展示「已开启显示」的技能，避免技能多时拥挤
+  const visibleSkills = skills.filter((s) => s.enabled)
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)')
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
@@ -90,6 +96,8 @@ export default function ChatPage() {
   }, [])
   const scrollRef = useRef<HTMLDivElement>(null)
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const inputRef = useRef<{ focus: () => void } | null>(null)
+  const pendingGreetingRef = useRef<string | null>(null)
   const groupsInited = useRef(false)
 
   const convGroups = groupConversationsByDate(conversations)
@@ -246,8 +254,23 @@ export default function ChatPage() {
   useEffect(() => {
     const conv = params.get('conversation')
     const msg = params.get('message')
+    const greeting = params.get('greeting')
     if (conv) {
       openConversation(conv, msg ?? undefined)
+      setParams({}, { replace: true })
+    } else if (greeting) {
+      // 从今日回顾「聊聊」跳来：AI 主动开场，把关怀句作为 AI 第一句话显示，输入框留空待用户回应。
+      // 记下开场白，用户首次发言时带给后端落库进历史，模型才能接住这个话题。
+      newConversation()
+      pendingGreetingRef.current = greeting
+      setMessages([
+        {
+          id: `greet-${Date.now()}`,
+          role: 'assistant',
+          content: greeting,
+          createdAt: new Date().toISOString(),
+        },
+      ])
       setParams({}, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,14 +334,20 @@ export default function ChatPage() {
   // 手机端：把「会话历史 / 新对话」操作注册到全局顶栏（替代搜索框，合并成一行）
   const registerChatHeader = useChatHeaderStore((s) => s.register)
   const clearChatHeader = useChatHeaderStore((s) => s.clear)
+  const setCanShare = useChatHeaderStore((s) => s.setCanShare)
   useEffect(() => {
     registerChatHeader({
       openHistory: () => setConvDrawerOpen(true),
       newChat: newConversation,
+      openShare: () => setShareOpen(true),
     })
     return () => clearChatHeader()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // 同步「当前会话是否可分享」给顶栏（手机端分享按钮显隐）
+  useEffect(() => {
+    setCanShare(!!activeId && messages.length > 0)
+  }, [activeId, messages.length, setCanShare])
 
   // 重新生成某条 AI 回复：替换该条消息内容，重新流式
   const onRegenerate = async (target: UiMessage) => {
@@ -495,6 +524,7 @@ export default function ChatPage() {
         conversationId: convId,
         message: text,
         skillId: activeSkillId,
+        greeting: pendingGreetingRef.current,
         imageKeys: imgs.map((i) => i.key),
         attachments: files,
         enableWebSearch: webSearch,
@@ -502,6 +532,7 @@ export default function ChatPage() {
       {
         onMeta: (d) => {
           convId = d.conversation_id
+          pendingGreetingRef.current = null // 开场白只在首轮带一次
           if (!activeId) setActiveId(d.conversation_id)
           setMessages((prev) =>
             prev.map((m) =>
@@ -556,6 +587,24 @@ export default function ChatPage() {
         },
       },
     )
+  }
+
+  // 快捷提问/建议词：填进输入框并聚焦（不直接发送），
+  // 因为很多快捷语是「待补全的开头」（如「翻译这段话」），直接发会漏掉正文。
+  const fillInput = (text: string) => {
+    setInput(text)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  // 划词追问：选中 AI 回答片段 → 把引用填进输入框待补充（追问留空待问，解释预填请求）
+  const onQuoteAsk = (quote: string, mode: 'ask' | 'explain') => {
+    const clip = quote.length > 200 ? quote.slice(0, 200) + '…' : quote
+    const prefix =
+      mode === 'explain'
+        ? `请解释这句：「${clip}」\n`
+        : `关于「${clip}」，`
+    setInput((prev) => (prev ? prev + '\n' + prefix : prefix))
+    setTimeout(() => inputRef.current?.focus(), 0)
   }
 
   const SUGGESTIONS = [
@@ -675,6 +724,18 @@ export default function ChatPage() {
             </div>
           </div>
         )}
+        {/* 分享当前会话（桌面端右上角悬浮；手机端移到顶栏，避免挡对话） */}
+        {!isMobile && activeId && messages.length > 0 && (
+          <Tooltip title="分享这段对话">
+            <Button
+              className="chat-share-btn"
+              icon={<ShareAltOutlined />}
+              onClick={() => setShareOpen(true)}
+            >
+              分享
+            </Button>
+          </Tooltip>
+        )}
         <div ref={scrollRef} className="chat-scroll" style={{ flex: 1, overflowY: 'auto', padding: '28px 0' }}>
           {messages.length === 0 ? (
             <div className="chat-empty">
@@ -688,7 +749,7 @@ export default function ChatPage() {
                   <button
                     key={s}
                     className="chat-suggestion"
-                    onClick={() => setInput(s)}
+                    onClick={() => fillInput(s)}
                   >
                     {s}
                   </button>
@@ -696,7 +757,7 @@ export default function ChatPage() {
               </div>
             </div>
           ) : (
-            <div className="fluid-narrow" style={{ padding: '0 24px' }}>
+            <div className="chat-fluid" style={{ padding: '0 24px' }}>
               {messages.map((m) => (
                 <div
                   key={m.id}
@@ -722,7 +783,7 @@ export default function ChatPage() {
             isMobile && playerVisible ? ' chat-input-bar--player' : ''
           }`}
         >
-          <div className="fluid-narrow" style={{ padding: '0 24px' }}>
+          <div className="chat-fluid" style={{ padding: '0 24px' }}>
             {/* 技能选择器 + 快捷开场提问 */}
             <div className="chat-skill-bar">
               <Popover
@@ -736,12 +797,12 @@ export default function ChatPage() {
                     >
                       <span>🚫 不挂载技能</span>
                     </div>
-                    {skills.length === 0 && (
+                    {visibleSkills.length === 0 && (
                       <div className="chat-skill-empty">
-                        还没有技能，去「技能」页创建
+                        还没有可用技能，去「技能」页创建或开启显示
                       </div>
                     )}
-                    {skills.map((s) => (
+                    {visibleSkills.map((s) => (
                       <div
                         key={s.id}
                         className={`chat-skill-opt${
@@ -773,13 +834,14 @@ export default function ChatPage() {
                   <CloseOutlined />
                 </button>
               )}
-              {/* 快捷开场提问 */}
+              {/* 快捷开场提问：填进输入框待补充，不直接发送 */}
               {activeSkill?.config?.quick_prompts?.map((qp, i) => (
                 <button
                   key={i}
                   className="chat-quick-prompt"
                   disabled={sending}
-                  onClick={() => onSend(qp)}
+                  onClick={() => fillInput(qp)}
+                  title="填入输入框，可补充后发送"
                 >
                   {qp}
                 </button>
@@ -878,6 +940,7 @@ export default function ChatPage() {
                     />
                   </Popover>
                   <Input.TextArea
+                    ref={inputRef as never}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onPressEnter={(e) => {
@@ -904,6 +967,7 @@ export default function ChatPage() {
               ) : (
                 <>
                   <Input.TextArea
+                    ref={inputRef as never}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onPressEnter={(e) => {
@@ -971,6 +1035,16 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      {/* 划词追问：选中 AI 回答片段浮出「追问/解释」 */}
+      <SelectionPopover onAsk={onQuoteAsk} />
+
+      {/* 分享对话弹窗 */}
+      <ShareModal
+        open={shareOpen}
+        conversationId={activeId}
+        onClose={() => setShareOpen(false)}
+      />
     </div>
   )
 }

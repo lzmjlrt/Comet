@@ -98,6 +98,25 @@ class Settings(BaseSettings):
     consolidate_min_age_hours: int = 24  # 凭提及次数提升需存在满 N 小时
     consolidate_profile_top_k: int = 5  # 每次巩固对 top-K 高频实体做画像增强
 
+    # 反思引擎（归纳高层洞察 Insight）
+    reflection_top_k: int = 25  # 反思输入：top-N 高重要度/高频实体
+    reflection_stmt_per_entity: int = 4  # 每个实体取几条代表性陈述
+    reflection_min_insights: int = 3  # 期望产出洞察下限
+    reflection_max_insights: int = 6  # 期望产出洞察上限
+    reflection_min_entities: int = 5  # 实体少于此数不反思（信息太少）
+    reflection_trigger_threshold: int = 20  # 增量触发：累计新增记忆达标触发一次反思
+
+    # 记忆主动召回（对话每轮注入相关记忆 + 洞察）
+    active_recall_entity_top_k: int = 5  # 召回实体数
+    active_recall_insight_top_k: int = 2  # 召回洞察数
+    active_recall_min_score: float = 0.5  # 实体召回余弦门控（低于不注入，节流防噪声）
+    active_recall_max_chars: int = 600  # 注入背景块长度上限
+
+    # 跨会话上下文（注入最近其他会话的摘要，默认关）
+    cross_session_max_convs: int = 3  # 取最近几个其他会话
+    cross_session_turns_per_conv: int = 4  # 每会话取最后几轮
+    cross_session_max_chars: int = 1200  # 注入上限
+
     @property
     def database_url(self) -> str:
         return (

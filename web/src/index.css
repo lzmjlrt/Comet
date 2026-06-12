@@ -125,6 +125,12 @@ body {
   max-width: 760px;
   margin-inline: auto;
 }
+/* 对话页专用容器：比阅读型窄栏更宽，消息流与输入区同宽对齐 */
+.chat-fluid {
+  width: 100%;
+  max-width: 960px;
+  margin-inline: auto;
+}
 
 
 /* 音乐播放器：CD 旋转 + 歌词滚动 */
@@ -1887,7 +1893,8 @@ body {
 
   /* 内容容器在手机上吃满宽度 */
   .fluid-page,
-  .fluid-narrow {
+  .fluid-narrow,
+  .chat-fluid {
     max-width: 100%;
   }
 
@@ -1898,7 +1905,8 @@ body {
   }
 
   /* 对话消息与输入区在手机上减小左右留白 */
-  .chat-main .fluid-narrow {
+  .chat-main .fluid-narrow,
+  .chat-main .chat-fluid {
     padding-left: 12px !important;
     padding-right: 12px !important;
   }
@@ -3020,10 +3028,20 @@ body {
 .skill-card-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 4px;
   margin-top: 10px;
   border-top: 1px solid #f3f4f6;
   padding-top: 8px;
+}
+.skill-card-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.skill-card-toggle-label {
+  font-size: 12px;
+  color: #98a2b3;
 }
 
 /* 技能编辑弹窗字段 */
@@ -3179,4 +3197,338 @@ body {
   .chat-quick-prompt {
     max-width: 180px;
   }
+}
+
+/* ── 记忆页：AI 眼中的你 ── */
+.insight-banner {
+  position: relative;
+  border-radius: 16px;
+  padding: 18px 20px 20px;
+  overflow: hidden;
+  background: #f6f8fc;
+  border: 1px solid #e9eef6;
+}
+.insight-banner-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.insight-banner-title {
+  color: #1d2939;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.insight-banner-empty {
+  position: relative;
+  color: #667085;
+  font-size: 13.5px;
+  line-height: 1.8;
+  background: #fff;
+  border: 1px solid #eceef2;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.insight-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 12px;
+}
+.insight-item {
+  position: relative;
+  background: #fff;
+  border: 1px solid #eceef2;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 8px -4px rgba(16, 24, 40, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.insight-item:hover {
+  transform: translateY(-2px);
+  border-color: #d4def0;
+  box-shadow: 0 10px 24px -12px rgba(21, 94, 239, 0.28);
+}
+.insight-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.insight-del {
+  color: #c7c9d1;
+  cursor: pointer;
+  font-size: 13px;
+  transition: color 0.15s ease;
+}
+.insight-del:hover {
+  color: #ff5d34;
+}
+.insight-content {
+  color: #344054;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+@media (max-width: 768px) {
+  .insight-grid {
+    grid-template-columns: 1fr;
+  }
+  .insight-banner {
+    padding: 14px 14px 16px;
+  }
+}
+
+/* 手机端：写死 width 的弹窗（如 680px 的编辑弹窗）限宽，避免横向溢出 */
+@media (max-width: 768px) {
+  /* 用 flex 让弹窗在视口内真正居中，避免 margin:auto 在滚动容器里失效导致左溢出 */
+  .ant-modal-wrap {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding: 12px !important;
+  }
+  .ant-modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .ant-modal-content {
+    padding: 16px !important;
+  }
+}
+
+/* 今日回顾：前瞻关怀句 + 聊聊 */
+.daily-care {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: linear-gradient(120deg, #fff7e6 0%, #fff1f0 100%);
+  border: 1px solid #ffe7ba;
+}
+.daily-care-text {
+  color: #874d00;
+  font-size: 14px;
+  line-height: 1.6;
+  flex: 1;
+}
+@media (max-width: 768px) {
+  .daily-care {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+}
+
+/* 划词追问：选区浮动工具条 */
+.sel-popover {
+  position: fixed;
+  z-index: 1200;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: #1f2329;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.4);
+  animation: sel-pop-in 0.12s ease;
+}
+@keyframes sel-pop-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.sel-popover::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid #1f2329;
+}
+.sel-popover-btn {
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+.sel-popover-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.sel-popover-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 对话分享按钮（对话区右上角悬浮） */
+.chat-share-btn {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 20;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px -6px rgba(16, 24, 40, 0.25);
+}
+
+/* 分享公开查看页 */
+.share-loading {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.share-page {
+  min-height: 100vh;
+  background: #f5f7fb;
+  padding: 24px 16px;
+}
+.share-container {
+  max-width: 820px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px -20px rgba(16, 24, 40, 0.25);
+  overflow: hidden;
+}
+.share-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f0f0f0;
+  background: linear-gradient(120deg, #155eef 0%, #22d3ee 100%);
+}
+.share-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.share-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+}
+.share-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 2px;
+}
+.share-body {
+  padding: 24px;
+}
+.share-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.share-msg-user {
+  flex-direction: row-reverse;
+}
+.share-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+.share-avatar-user {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #155eef, #2f7bff);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.share-avatar-ai {
+  border: 1px solid #eef0f4;
+  background: #fff;
+}
+.share-msg-user .share-bubble {
+  background: #eef4ff;
+  color: #1d2129;
+}
+.share-msg-ai .share-bubble {
+  background: #f7f8fa;
+  color: #1d2129;
+}
+.share-bubble {
+  display: inline-block;
+  max-width: calc(100% - 44px);
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  line-height: 1.75;
+}
+.share-footer {
+  text-align: center;
+  padding: 16px;
+  font-size: 13px;
+  color: #98a2b3;
+  border-top: 1px solid #f0f0f0;
+}
+.share-footer a {
+  color: #155eef;
+  cursor: pointer;
+}
+@media (max-width: 768px) {
+  .share-bubble {
+    max-width: 100%;
+  }
+}
+
+/* 我的分享列表 */
+.share-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.share-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #eceef2;
+  border-radius: 10px;
+}
+.share-list-info {
+  min-width: 0;
+  flex: 1;
+}
+.share-list-title {
+  font-size: 14px;
+  color: #1d2129;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #98a2b3;
 }

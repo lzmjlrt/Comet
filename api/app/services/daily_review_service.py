@@ -114,10 +114,14 @@ class DailyReviewService:
             logger.warning("收集每日心情失败（忽略）: %s", e)
             return ""
 
-    async def _generate_content(
+    async def _generate_content_and_care(
         self, user_id: uuid.UUID, data: dict
-    ) -> str:
-        """调用对话模型生成简报；无模型或失败则用规则兜底。"""
+    ) -> tuple[str, str]:
+        """生成回顾正文 + 关怀句。
+
+        先用 session 串行取好 client / 情绪 / 洞察（session 非并发安全），
+        再把两次纯 httpx 的 LLM 调用并行（gather），避免串行叠加导致仪表盘加载慢。
+        """
         from app.core.llm.resolver import get_optional_client_for_type
 
         songs = data.get("songs", [])
@@ -127,20 +131,38 @@ class DailyReviewService:
             + len(data["documents"])
             + len(songs)
         )
-        if total == 0:
-            return "今天还没有新动态，休息一下也很好 🌿"
-
-        mood = await self._collect_mood(user_id)
-
-        client = await get_optional_client_for_type(self.session, user_id, "chat")
-        fallback = (
-            f"今天有 {len(data['messages'])} 次提问、"
-            f"记住了 {len(data['memories'])} 件事、"
-            f"新增了 {len(data['documents'])} 份文档、"
-            f"听了 {len(songs)} 首歌。"
+        content_fallback = (
+            "今天还没有新动态，休息一下也很好 🌿"
+            if total == 0
+            else (
+                f"今天有 {len(data['messages'])} 次提问、"
+                f"记住了 {len(data['memories'])} 件事、"
+                f"新增了 {len(data['documents'])} 份文档、"
+                f"听了 {len(songs)} 首歌。"
+            )
         )
+        if total == 0:
+            return content_fallback, ""
+
+        # 串行取 session 相关数据（不可并发共用 session）
+        client = await get_optional_client_for_type(self.session, user_id, "chat")
         if not client:
-            return fallback
+            return content_fallback, ""
+        mood = await self._collect_mood(user_id)
+        insights = await self._collect_insights(user_id)
+
+        # 两次 LLM 调用并行（纯 httpx，无 session 依赖）
+        content, care = await asyncio.gather(
+            self._call_content(client, data, mood, content_fallback),
+            self._call_care(client, data, mood, insights),
+        )
+        return content, care
+
+    async def _call_content(
+        self, client, data: dict, mood: str, fallback: str
+    ) -> str:
+        """调用 LLM 生成回顾正文（带一次重试）。"""
+        songs = data.get("songs", [])
         prompt = render_prompt(
             "daily_review.jinja2",
             messages="；".join(data["messages"][:20]) or "（无）",
@@ -150,13 +172,11 @@ class DailyReviewService:
             songs="、".join(songs[:20]) or "（无）",
             mood=mood or "（暂无情绪数据）",
         )
-        # 关键调用做有限重试：模型偶发返回空（输出进 reasoning / token 不足）时再试一次
         for attempt in range(2):
             try:
                 text = await client.chat(
                     [{"role": "user", "content": prompt}],
-                    temperature=0.7,
-                    max_tokens=1200,
+                    temperature=0.7, max_tokens=1200,
                 )
                 if text and text.strip():
                     return text.strip()
@@ -164,9 +184,46 @@ class DailyReviewService:
             except Exception as e:
                 logger.warning("每日回顾生成失败（第 %d 次）: %s", attempt + 1, e)
             if attempt == 0:
-                await asyncio.sleep(0.6)  # 轻微退避后重试一次
-        logger.warning("每日回顾两次均未生成有效内容，用兜底文案")
+                await asyncio.sleep(0.6)
         return fallback
+
+    async def _call_care(
+        self, client, data: dict, mood: str, insights: str
+    ) -> str:
+        """调用 LLM 生成关怀句。失败返回空串。"""
+        try:
+            recent = "；".join((data.get("messages") or [])[:5]) or "（无）"
+            memories = "；".join((data.get("memories") or [])[:10]) or "（无）"
+            prompt = render_prompt(
+                "daily_care.jinja2",
+                mood=mood or "（暂无情绪数据）",
+                insights=insights or "（暂无）",
+                memories=memories,
+                recent=recent,
+            )
+            text = await client.chat(
+                [{"role": "user", "content": prompt}], temperature=0.8, max_tokens=200
+            )
+            return (text or "").strip().strip('"「」') if text else ""
+        except Exception as e:
+            logger.warning("生成关怀句失败（忽略）: err=%s", e)
+            return ""
+
+    async def _collect_insights(self, user_id: uuid.UUID) -> str:
+        """取「AI 眼中的你」高层洞察，拼成一句话；无则空串。"""
+        try:
+            from app.repositories.neo4j.memory_graph_repository import (
+                MemoryGraphRepository,
+            )
+
+            rows = await MemoryGraphRepository().list_insights(str(user_id))
+            contents = [
+                (r.get("content") or "").strip() for r in rows[:3]
+            ]
+            return "；".join(c for c in contents if c)
+        except Exception as e:
+            logger.warning("收集洞察失败（忽略）: %s", e)
+            return ""
 
     async def get_or_generate(self, user_id: uuid.UUID, day: date | None = None) -> dict:
         """生成/刷新当天回顾。
@@ -199,16 +256,17 @@ class DailyReviewService:
             # 已有非空回顾且活动数据无变化，直接复用，不重复调用 LLM
             return self.to_out_dict(existing)
 
-        content = await self._generate_content(user_id, data)
+        content, care = await self._generate_content_and_care(user_id, data)
         if existing:
             existing.content = content
+            existing.care = care
             existing.stats = stats
             await self.session.commit()
             await self.session.refresh(existing)
             return self.to_out_dict(existing)
 
         review = DailyReview(
-            user_id=user_id, review_date=day, content=content, stats=stats
+            user_id=user_id, review_date=day, content=content, care=care, stats=stats
         )
         self.session.add(review)
         await self.session.commit()
@@ -228,6 +286,7 @@ class DailyReviewService:
         return {
             "date": review.review_date.isoformat(),
             "content": review.content,
+            "care": review.care or "",
             "stats": review.stats,
             "created_at": review.created_at.isoformat() if review.created_at else None,
         }

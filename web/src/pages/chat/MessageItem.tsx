@@ -158,6 +158,7 @@ export default function MessageItem({
 
         {shouldRenderBubble && (
           <div
+            data-ai-message={!isUser ? 'true' : undefined}
             style={{
               background: isUser
                 ? 'linear-gradient(135deg, #1d6bff 0%, #2f7bff 100%)'

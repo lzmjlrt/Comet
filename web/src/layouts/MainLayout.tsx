@@ -15,6 +15,7 @@ import {
   RobotOutlined,
   SearchOutlined,
   SettingOutlined,
+  ShareAltOutlined,
   StarOutlined,
   ThunderboltOutlined,
   ToolOutlined,
@@ -95,6 +96,8 @@ export default function MainLayout() {
   const chatHeaderActive = useChatHeaderStore((s) => s.active)
   const chatOpenHistory = useChatHeaderStore((s) => s.openHistory)
   const chatNewChat = useChatHeaderStore((s) => s.newChat)
+  const chatOpenShare = useChatHeaderStore((s) => s.openShare)
+  const chatCanShare = useChatHeaderStore((s) => s.canShare)
   const showChatHeader = isMobile && chatHeaderActive && location.pathname === '/chat'
 
   // 桌面端：侧边栏折叠（窄条）；移动端：抽屉开关
@@ -263,6 +266,15 @@ export default function MainLayout() {
               >
                 新对话
               </Button>
+              {chatCanShare && (
+                <Button
+                  type="text"
+                  icon={<ShareAltOutlined />}
+                  onClick={() => chatOpenShare?.()}
+                >
+                  分享
+                </Button>
+              )}
             </div>
           ) : (
             <div
