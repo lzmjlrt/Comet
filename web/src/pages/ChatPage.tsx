@@ -38,6 +38,7 @@ import {
 } from '@/api/chat'
 import { favoriteApi } from '@/api/favorites'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
+import VoiceInputButton from '@/components/VoiceInputButton'
 import MessageItem from './chat/MessageItem'
 import SelectionPopover from './chat/SelectionPopover'
 import ShareModal from './chat/ShareModal'
@@ -300,6 +301,7 @@ export default function ChatPage() {
           content: m.content,
           citations: m.meta_data?.citations,
           toolCalls: m.meta_data?.tool_calls,
+          images: m.images,
           attachments: m.meta_data?.attachments?.map((a) => ({
             file_name: a.file_name,
           })),
@@ -422,7 +424,7 @@ export default function ChatPage() {
     } catch (e) {
       antdMessage.error((e as Error).message)
     }
-    return false // 阻止 antd 默认上传
+    return Upload.LIST_IGNORE // 阻止 antd 默认上传 + 不入 fileList（避免移动端选择器残留）
   }
 
   const onUploadFile = async (file: File) => {
@@ -440,7 +442,7 @@ export default function ChatPage() {
       hide()
       antdMessage.error((e as Error).message)
     }
-    return false // 阻止 antd 默认上传
+    return Upload.LIST_IGNORE // 阻止 antd 默认上传 + 不入 fileList
   }
 
   // 拖拽到对话区上传：图片走多模态，文档走临时附件，按扩展名/类型分流
@@ -939,6 +941,10 @@ export default function ChatPage() {
                       style={{ flexShrink: 0, color: webSearch ? '#155EEF' : undefined }}
                     />
                   </Popover>
+                  <VoiceInputButton
+                    size={18}
+                    onResult={(t) => setInput((prev) => (prev ? prev + ' ' + t : t))}
+                  />
                   <Input.TextArea
                     ref={inputRef as never}
                     value={input}
@@ -989,7 +995,7 @@ export default function ChatPage() {
                       marginTop: 10,
                     }}
                   >
-                    <Space size="large">
+                    <Space size="large" align="center">
                       <Upload accept="image/*" showUploadList={false} beforeUpload={onUploadImage as never}>
                         <Tooltip title="上传图片">
                           <Button type="text" icon={<PictureOutlined style={{ fontSize: 19 }} />} />
@@ -1005,13 +1011,23 @@ export default function ChatPage() {
                         </Tooltip>
                       </Upload>
                       <Tooltip title="联网搜索">
-                        <Space size={6}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            height: 32,
+                          }}
+                        >
                           <GlobalOutlined
                             style={{ fontSize: 18, color: webSearch ? '#155EEF' : '#98A2B3' }}
                           />
                           <Switch size="small" checked={webSearch} onChange={setWebSearch} />
-                        </Space>
+                        </span>
                       </Tooltip>
+                      <VoiceInputButton
+                        onResult={(t) => setInput((prev) => (prev ? prev + ' ' + t : t))}
+                      />
                     </Space>
                     <Button
                       type="primary"

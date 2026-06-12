@@ -163,6 +163,52 @@ async def upload_chat_file(
     )
 
 
+@router.post("/chat/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """语音转文字（路 B 云端 ASR）：上传音频 → 存储拿公网 URL → 调用户默认 ASR 模型转写。
+
+    没配 ASR 模型返回 code=2010（前端据此降级到浏览器 Web Speech 或提示）。
+    音频用完即弃，不入库。
+    """
+    import uuid as _uuid
+    from pathlib import Path
+
+    from app.core.asr import transcribe
+    from app.core.exceptions import BizError
+    from app.core.llm.chat_model import get_default_config_for_type
+    from app.core.security import decrypt_secret
+
+    # 取用户默认 ASR 配置（没配则报 2010，前端降级）
+    config = await get_default_config_for_type(session, user.id, "asr", "语音识别")
+
+    content = await file.read()
+    if not content:
+        raise BizError("音频为空", code=2037)
+    ext = Path(file.filename or "audio.mp3").suffix.lower() or ".mp3"
+    file_key = build_file_key(str(user.id), "asr", str(_uuid.uuid4()), ext)
+    storage = get_storage()
+    await storage.save(file_key, content)
+    try:
+        audio_url = storage.get_url(file_key)
+        text = await transcribe(
+            config.provider,
+            decrypt_secret(config.api_key_encrypted),
+            config.model_name,
+            audio_url,
+        )
+    finally:
+        # 用完即弃
+        try:
+            await storage.delete(file_key)
+        except Exception:
+            pass
+    return success({"text": text})
+
+
 # ── 消息反馈 / 重新生成 ──
 
 @router.post("/chat/messages/{message_id}/feedback")

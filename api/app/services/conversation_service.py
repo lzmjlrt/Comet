@@ -56,12 +56,35 @@ class ConversationService:
             user_id, conv_id
         )
         rating_by_msg = {str(f.message_id): f.rating for f in feedbacks}
+
+        # 把 user 消息里存的图片 key 转成可访问 url（历史还原图片显示）
+        from app.core.storage import get_storage
+
+        storage = get_storage()
+
+        def _image_urls(meta: dict | None) -> list[str]:
+            keys = (meta or {}).get("image_keys") or []
+            urls: list[str] = []
+            for k in keys:
+                try:
+                    urls.append(storage.get_url(k))
+                except Exception:
+                    continue
+            return urls
+
         return [
             {
                 "id": str(m.id),
                 "role": m.role,
                 "content": m.content,
                 "meta_data": m.meta_data,
+                "images": _image_urls(m.meta_data),
+                "sender_persona_id": str(m.sender_persona_id)
+                if m.sender_persona_id
+                else None,
+                "sender_name": (m.meta_data or {}).get("sender_name")
+                if m.meta_data
+                else None,
                 "feedback": rating_by_msg.get(str(m.id)),
                 "created_at": m.created_at.isoformat() if m.created_at else None,
             }
@@ -73,6 +96,9 @@ class ConversationService:
         return {
             "id": str(conv.id),
             "title": conv.title,
+            "is_group": conv.is_group,
+            "member_persona_ids": conv.member_persona_ids or [],
+            "enable_tools": conv.enable_tools,
             "created_at": conv.created_at.isoformat() if conv.created_at else None,
             "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
         }

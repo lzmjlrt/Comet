@@ -50,5 +50,12 @@ export const theme: ThemeConfig = {
     Input: {
       fontSize: 14,
     },
+    Modal: {
+      borderRadiusLG: 16,
+      titleFontSize: 17,
+      headerBg: '#ffffff',
+      paddingMD: 24,
+      paddingContentHorizontalLG: 24,
+    },
   },
 }
