@@ -228,7 +228,7 @@ export default function GroupChatPage() {
   useEffect(() => {
     loadConversations()
     personaApi
-      .list()
+      .list(true)
       .then((r) => setAllPersonas(r.data))
       .catch(() => {})
   }, [])
