@@ -100,3 +100,46 @@ async def release_turn_lock(conv_id: str) -> None:
         await get_redis().delete(_lock_key(conv_id))
     except Exception as e:
         logger.warning("释放群聊回合锁失败: conv=%s err=%s", conv_id, e)
+
+
+# ── 在线状态（presence）：用有序集合存「user_id -> 最近心跳时间戳」，过期判离线 ──
+_ONLINE_PREFIX = "groupchat:online:"
+# 超过该秒数没有心跳即视为离线（心跳间隔 _PING_INTERVAL=25s，留足余量）
+_ONLINE_TTL = 60
+
+
+def _online_key(conv_id: str) -> str:
+    return f"{_ONLINE_PREFIX}{conv_id}"
+
+
+async def mark_online(conv_id: str, user_id: str) -> None:
+    """标记某用户在该群在线（写入/刷新心跳时间戳）。"""
+    import time
+
+    try:
+        await get_redis().zadd(_online_key(conv_id), {str(user_id): time.time()})
+    except Exception as e:
+        logger.warning("标记在线失败: conv=%s user=%s err=%s", conv_id, user_id, e)
+
+
+async def mark_offline(conv_id: str, user_id: str) -> None:
+    """移除某用户的在线标记。"""
+    try:
+        await get_redis().zrem(_online_key(conv_id), str(user_id))
+    except Exception as e:
+        logger.warning("标记离线失败: conv=%s user=%s err=%s", conv_id, user_id, e)
+
+
+async def list_online(conv_id: str) -> set[str]:
+    """返回该群当前在线的 user_id 集合（清理超时项后取剩余）。"""
+    import time
+
+    try:
+        r = get_redis()
+        cutoff = time.time() - _ONLINE_TTL
+        await r.zremrangebyscore(_online_key(conv_id), 0, cutoff)
+        members = await r.zrange(_online_key(conv_id), 0, -1)
+        return {str(m) for m in members}
+    except Exception as e:
+        logger.warning("获取在线列表失败: conv=%s err=%s", conv_id, e)
+        return set()

@@ -249,12 +249,18 @@ export interface GroupHuman {
   role: 'owner' | 'member'
   is_me: boolean
   avatar_url?: string | null
+  online?: boolean
 }
 
 // 多人实时群聊 SSE 订阅事件
 export interface GroupRealtimeHandlers {
   onReady?: (d: { conversation_id: string }) => void
-  onPresence?: (d: { type: 'join' | 'leave'; nickname: string }) => void
+  onPresence?: (d: {
+    type: 'join' | 'leave' | 'online' | 'offline'
+    nickname?: string
+    user_id?: string
+  }) => void
+  onThinking?: () => void
   onHumanMessage?: (d: {
     message_id: string
     user_id: string
@@ -328,6 +334,9 @@ export async function subscribeGroupEvents(
           break
         case 'presence':
           handlers.onPresence?.(payload as never)
+          break
+        case 'thinking':
+          handlers.onThinking?.()
           break
         case 'human_message':
           handlers.onHumanMessage?.(payload as never)

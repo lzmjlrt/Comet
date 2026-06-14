@@ -72,6 +72,36 @@ interface GroupUiMessage {
   streaming?: boolean
 }
 
+// 把后端群聊历史消息转成页面消息模型（openConversation 与重连 resync 复用）
+type RawGroupMsg = {
+  id: string
+  role: string
+  content: string
+  sender_persona_id?: string | null
+  sender_name?: string | null
+  sender_user_id?: string | null
+  is_me?: boolean
+  images?: string[]
+  meta_data?: { tool_calls?: { tool: string; query?: string }[] } | null
+}
+function toUiMessage(m: RawGroupMsg): GroupUiMessage {
+  return {
+    id: m.id,
+    role: m.role as 'user' | 'assistant',
+    content: m.content,
+    senderPersonaId: m.sender_persona_id,
+    senderName: m.sender_name,
+    senderUserId: m.sender_user_id,
+    isMe: m.is_me,
+    images: m.images,
+    toolRuns: m.meta_data?.tool_calls?.map((t) => ({
+      tool: t.tool,
+      query: t.query,
+      status: 'success',
+    })),
+  }
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(
     () => typeof window !== 'undefined' && window.innerWidth <= 768,
@@ -205,8 +235,10 @@ export default function GroupChatPage() {
   )
   const [uploading, setUploading] = useState(false)
   const [loadingMsgs, setLoadingMsgs] = useState(false)
+  const [thinking, setThinking] = useState(false)
   const [listOpen, setListOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [joinOpen, setJoinOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -287,13 +319,14 @@ export default function GroupChatPage() {
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages])
+  }, [messages, thinking])
 
   const openConversation = async (id: string) => {
     // 断开旧订阅
     subRef.current?.abort()
     streamingRef.current = null
     seenHumanRef.current = new Set()
+    setThinking(false)
     setActiveId(id)
     setListOpen(false)
     setLoadingMsgs(true)
@@ -309,129 +342,179 @@ export default function GroupChatPage() {
         const su = (m as { sender_user_id?: string }).sender_user_id
         if (m.role === 'user' && su) seenHumanRef.current.add(m.id)
       })
-      setMessages(
-        msgsResp.data.map((m) => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          senderPersonaId: (m as { sender_persona_id?: string }).sender_persona_id,
-          senderName: (m as { sender_name?: string }).sender_name,
-          senderUserId: (m as { sender_user_id?: string }).sender_user_id,
-          isMe: (m as { is_me?: boolean }).is_me,
-          images: (m as { images?: string[] }).images,
-          toolRuns: (m.meta_data?.tool_calls as GroupToolRun[] | undefined)?.map(
-            (t) => ({ tool: t.tool, query: t.query, status: 'success' }),
-          ),
-        })),
-      )
+      setMessages(msgsResp.data.map((m) => toUiMessage(m as RawGroupMsg)))
       startSubscription(id)
     } finally {
       setLoadingMsgs(false)
     }
   }
 
-  // ── 实时订阅：接收全员发言与 AI 接话事件 ──
+  // ── 实时订阅：接收全员发言与 AI 接话事件（带断线自动重连）──
   const startSubscription = (id: string) => {
     const ctrl = new AbortController()
     subRef.current = ctrl
-    subscribeGroupEvents(
-      id,
-      {
-        onHumanMessage: (d) => {
-          if (seenHumanRef.current.has(d.message_id)) return
-          seenHumanRef.current.add(d.message_id)
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: d.message_id,
-              role: 'user',
-              content: d.content,
-              senderUserId: d.user_id,
-              senderName: d.nickname,
-              isMe: d.user_id === user?.id,
-            },
-          ])
-        },
-        onSpeakerStart: (d) => {
-          const tempId = `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-          streamingRef.current = tempId
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: tempId,
-              role: 'assistant',
-              content: '',
-              senderPersonaId: d.persona_id,
-              senderName: d.name,
-              streaming: true,
-            },
-          ])
-        },
-        onToken: (d) => {
-          const cur = streamingRef.current
-          if (!cur) return
-          setMessages((prev) =>
-            prev.map((m) => (m.id === cur ? { ...m, content: m.content + d.text } : m)),
-          )
-        },
-        onToolStart: (d) => {
-          const cur = streamingRef.current
-          if (!cur) return
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === cur
-                ? {
-                    ...m,
-                    toolRuns: [
-                      ...(m.toolRuns || []),
-                      { tool: d.tool, query: d.query, status: 'running' },
-                    ],
-                  }
-                : m,
-            ),
-          )
-        },
-        onToolResult: (d) => {
-          const cur = streamingRef.current
-          if (!cur) return
-          setMessages((prev) =>
-            prev.map((m) => {
-              if (m.id !== cur) return m
-              const runs = [...(m.toolRuns || [])]
-              for (let i = runs.length - 1; i >= 0; i -= 1) {
-                if (runs[i].tool === d.tool && runs[i].status === 'running') {
-                  runs[i] = { ...runs[i], status: d.status || 'success' }
-                  break
-                }
-              }
-              return { ...m, toolRuns: runs }
-            }),
-          )
-        },
-        onSpeakerEnd: (d) => {
-          const cur = streamingRef.current
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === cur ? { ...m, id: d.message_id, streaming: false } : m,
-            ),
-          )
-          streamingRef.current = null
-        },
-        onPresence: (d) => {
+    let attempt = 0
+    let connectedOnce = false
+
+    // 重连后补齐断线期间可能漏掉的消息与成员状态
+    const resync = async () => {
+      try {
+        const [m, h] = await Promise.all([
+          groupApi.listGroupMessages(id),
+          groupApi.listHumans(id).catch(() => ({ data: [] as GroupHuman[] })),
+        ])
+        seenHumanRef.current = new Set()
+        m.data.forEach((x) => {
+          const su = (x as { sender_user_id?: string }).sender_user_id
+          if (x.role === 'user' && su) seenHumanRef.current.add(x.id)
+        })
+        setMessages(m.data.map((x) => toUiMessage(x as RawGroupMsg)))
+        setHumans(h.data)
+        streamingRef.current = null
+        setThinking(false)
+      } catch {
+        /* 补齐失败忽略，下条消息照常追加 */
+      }
+    }
+
+    const refreshHumans = () => {
+      groupApi
+        .listHumans(id)
+        .then((r) => setHumans(r.data))
+        .catch(() => {})
+    }
+
+    // 定期刷新在线状态：兜底处理「网络硬断、对端没来得及广播离线」的情况
+    const onlineTimer = setInterval(refreshHumans, 30000)
+    ctrl.signal.addEventListener('abort', () => clearInterval(onlineTimer))
+
+    const handlers = {
+      onReady: () => {
+        attempt = 0
+        if (connectedOnce) resync() // 这是一次重连，补齐数据
+        connectedOnce = true
+        // 自己 SSE 已连上、服务端已标记在线，刷新一次在线状态（首连也刷）
+        refreshHumans()
+      },
+      onThinking: () => setThinking(true),
+      onPresence: (d: { type: string; nickname?: string }) => {
+        if (d.type === 'join' || d.type === 'leave') {
           antdMessage.info(
             `${d.nickname} ${d.type === 'join' ? '加入了群聊' : '退出了群聊'}`,
           )
-          groupApi
-            .listHumans(id)
-            .then((r) => setHumans(r.data))
-            .catch(() => {})
-        },
-        onError: (msg) => antdMessage.error(msg),
+        }
+        refreshHumans()
       },
-      ctrl.signal,
-    ).catch(() => {
-      /* abort 主动断开时忽略 */
-    })
+      onHumanMessage: (d: {
+        message_id: string
+        user_id: string
+        nickname: string
+        content: string
+      }) => {
+        if (seenHumanRef.current.has(d.message_id)) return
+        seenHumanRef.current.add(d.message_id)
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: d.message_id,
+            role: 'user' as const,
+            content: d.content,
+            senderUserId: d.user_id,
+            senderName: d.nickname,
+            isMe: d.user_id === user?.id,
+          },
+        ])
+      },
+      onSpeakerStart: (d: { persona_id: string; name: string }) => {
+        setThinking(false)
+        const tempId = `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+        streamingRef.current = tempId
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: tempId,
+            role: 'assistant' as const,
+            content: '',
+            senderPersonaId: d.persona_id,
+            senderName: d.name,
+            streaming: true,
+          },
+        ])
+      },
+      onToken: (d: { text: string }) => {
+        const cur = streamingRef.current
+        if (!cur) return
+        setMessages((prev) =>
+          prev.map((m) => (m.id === cur ? { ...m, content: m.content + d.text } : m)),
+        )
+      },
+      onToolStart: (d: { tool: string; query: string }) => {
+        const cur = streamingRef.current
+        if (!cur) return
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === cur
+              ? {
+                  ...m,
+                  toolRuns: [
+                    ...(m.toolRuns || []),
+                    { tool: d.tool, query: d.query, status: 'running' },
+                  ],
+                }
+              : m,
+          ),
+        )
+      },
+      onToolResult: (d: { tool: string; status?: string }) => {
+        const cur = streamingRef.current
+        if (!cur) return
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== cur) return m
+            const runs = [...(m.toolRuns || [])]
+            for (let i = runs.length - 1; i >= 0; i -= 1) {
+              if (runs[i].tool === d.tool && runs[i].status === 'running') {
+                runs[i] = { ...runs[i], status: d.status || 'success' }
+                break
+              }
+            }
+            return { ...m, toolRuns: runs }
+          }),
+        )
+      },
+      onSpeakerEnd: (d: { message_id: string }) => {
+        const cur = streamingRef.current
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === cur ? { ...m, id: d.message_id, streaming: false } : m,
+          ),
+        )
+        streamingRef.current = null
+      },
+      onDone: () => setThinking(false),
+      onError: (msg: string) => {
+        setThinking(false)
+        antdMessage.error(msg)
+      },
+    }
+
+    const scheduleReconnect = () => {
+      attempt += 1
+      const delay = Math.min(1000 * 2 ** attempt, 15000)
+      setTimeout(() => {
+        if (!ctrl.signal.aborted) connect()
+      }, delay)
+    }
+    const connect = () => {
+      subscribeGroupEvents(id, handlers, ctrl.signal)
+        .then(() => {
+          if (!ctrl.signal.aborted) scheduleReconnect()
+        })
+        .catch(() => {
+          if (!ctrl.signal.aborted) scheduleReconnect()
+        })
+    }
+    connect()
   }
 
   // ── @ 提及处理 ──
@@ -639,6 +722,14 @@ export default function GroupChatPage() {
       >
         新建群聊
       </Button>
+      <Button
+        icon={<UsergroupAddOutlined />}
+        block
+        onClick={() => setJoinOpen(true)}
+        style={{ marginTop: 4, marginBottom: 18 }}
+      >
+        输入邀请码加入
+      </Button>
       {conversations.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -713,19 +804,21 @@ export default function GroupChatPage() {
               <div className="gc-header-title-row">
                 <GroupAvatar members={members} size={32} />
                 <span className="gc-header-title">{activeConv?.title || '群聊'}</span>
-                <Tag bordered={false} className="gc-member-count">
-                  {members.length} 位成员
-                </Tag>
                 {humans.length > 1 && (
-                  <Tag bordered={false} color="green">
-                    👥 {humans.length} 人在群
+                  <Tag bordered={false} color="green" className="gc-online-tag">
+                    👥 {humans.filter((h) => h.online).length}/{humans.length} 在线
                   </Tag>
                 )}
-                {activeConv?.enable_tools && (
-                  <Tag bordered={false} color="blue">
-                    🛠 工具已开启
+                <span className="gc-header-tags">
+                  <Tag bordered={false} className="gc-member-count">
+                    {members.length} 位成员
                   </Tag>
-                )}
+                  {activeConv?.enable_tools && (
+                    <Tag bordered={false} color="blue">
+                      🛠 工具已开启
+                    </Tag>
+                  )}
+                </span>
               </div>
               <div className="gc-header-members">
                 {members.map((m) => (
@@ -954,6 +1047,18 @@ export default function GroupChatPage() {
               )
             })
           )}
+          {thinking && (
+            <div className="gc-row gc-row--ai gc-thinking-row">
+              <div className="gc-thinking">
+                <span className="gc-typing">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="gc-thinking-text">AI 正在想怎么接话…</span>
+              </div>
+            </div>
+          )}
           </div>
         </div>
 
@@ -1104,6 +1209,15 @@ export default function GroupChatPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={onGroupCreated}
+      />
+      <JoinByCodeModal
+        open={joinOpen}
+        onClose={() => setJoinOpen(false)}
+        onJoined={async (conv) => {
+          setJoinOpen(false)
+          await loadConversations()
+          openConversation(conv.id)
+        }}
       />
       <ShareModal
         open={shareOpen}
@@ -1337,6 +1451,9 @@ function InviteModal({
         <Space wrap size={[8, 8]}>
           {humans.map((h) => (
             <Tag key={h.user_id} bordered={false} color={h.role === 'owner' ? 'blue' : undefined}>
+              <span
+                className={`gc-online-dot ${h.online ? 'gc-online-dot--on' : ''}`}
+              />
               {h.nickname}
               {h.role === 'owner' ? ' · 群主' : ''}
               {h.is_me ? ' · 我' : ''}
@@ -1344,6 +1461,75 @@ function InviteModal({
           ))}
         </Space>
       </div>
+    </Modal>
+  )
+}
+
+// ── 输入邀请码加入群聊弹窗（支持粘贴邀请码或完整邀请链接）──
+function JoinByCodeModal({
+  open,
+  onClose,
+  onJoined,
+}: {
+  open: boolean
+  onClose: () => void
+  onJoined: (conv: Conversation) => void
+}) {
+  const [code, setCode] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (open) setCode('')
+  }, [open])
+
+  // 从输入里提取邀请码：兼容直接粘贴完整链接 .../groups/join/XXXX
+  const extractCode = (raw: string): string => {
+    const t = raw.trim()
+    const m = t.match(/\/groups\/join\/([A-Za-z0-9]+)/)
+    return (m ? m[1] : t).trim()
+  }
+
+  const handleOk = async () => {
+    const c = extractCode(code)
+    if (!c) {
+      antdMessage.warning('请输入邀请码')
+      return
+    }
+    setLoading(true)
+    try {
+      const resp = await groupApi.join(c)
+      antdMessage.success('已加入群聊')
+      onJoined(resp.data)
+    } catch (e) {
+      antdMessage.error((e as Error).message || '加入失败，邀请码可能无效或已失效')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="输入邀请码加入群聊"
+      open={open}
+      onCancel={onClose}
+      onOk={handleOk}
+      okText="加入"
+      cancelText="取消"
+      confirmLoading={loading}
+      width={440}
+    >
+      <p style={{ color: '#667085', marginTop: 0, marginBottom: 14, lineHeight: 1.7 }}>
+        粘贴好友给你的邀请码（或完整邀请链接）即可加入，和大家及群里的 AI 角色一起聊。
+      </p>
+      <Input
+        placeholder="如 A6VMQAH7，或粘贴邀请链接"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        onPressEnter={handleOk}
+        size="large"
+        allowClear
+        autoFocus
+      />
     </Modal>
   )
 }

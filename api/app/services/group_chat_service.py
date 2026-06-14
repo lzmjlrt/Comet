@@ -217,12 +217,17 @@ class GroupChatService:
         return "".join(secrets.choice(alphabet) for _ in range(8))
 
     async def _default_nickname(self, user_id: uuid.UUID) -> str:
-        """默认群昵称：取用户邮箱前缀。"""
+        """群内显示昵称：优先用户昵称 → 用户名 → 邮箱前缀 → 兜底「用户」。"""
         from app.models.user_model import User
 
         u = await self.session.get(User, user_id)
-        if u and getattr(u, "email", None):
-            return u.email.split("@")[0][:64]
+        if u:
+            if u.nickname and u.nickname.strip():
+                return u.nickname.strip()[:64]
+            if u.username and u.username.strip():
+                return u.username.split("@")[0].strip()[:64]
+            if u.email:
+                return u.email.split("@")[0][:64]
         return "用户"
 
     async def _get_conv_any(self, conv_id: uuid.UUID) -> Conversation | None:
@@ -337,16 +342,24 @@ class GroupChatService:
         # 批量取成员的头像 key（判断是否有头像）
         from app.models.user_model import User
 
+        online = await bus.list_online(str(conv_id))
         out: list[dict] = []
         for m in members:
             u = await self.session.get(User, m.user_id)
             has_avatar = bool(u and u.avatar)
+            custom = m.nickname
+            nickname = (
+                custom
+                if custom and custom.strip() and custom.strip() != "用户"
+                else await self._default_nickname(m.user_id)
+            )
             out.append(
                 {
                     "user_id": str(m.user_id),
-                    "nickname": m.nickname or "用户",
+                    "nickname": nickname,
                     "role": m.role,
                     "is_me": m.user_id == user_id,
+                    "online": str(m.user_id) in online,
                     "avatar_url": (
                         f"/api/groups/{conv_id}/members/{m.user_id}/avatar"
                         if has_avatar
@@ -465,9 +478,13 @@ class GroupChatService:
         conv = await self.get_group_for_member(user_id, conv_id)
         await self._ensure_owner_member(conv)
         member = await self.member_repo.get(conv_id, user_id)
+        # 显示名优先用成员自定义昵称（且非占位「用户」），否则按用户实时解析
+        custom = member.nickname if member else None
         nickname = (
-            member.nickname if member and member.nickname else None
-        ) or await self._default_nickname(user_id)
+            custom
+            if custom and custom.strip() and custom.strip() != "用户"
+            else await self._default_nickname(user_id)
+        )
         text = body.message.strip()
         image_keys = list(body.image_keys or [])
 
@@ -549,6 +566,7 @@ class GroupChatService:
             return
         member_names = [m["name"] for m in members]
         name_to_member = {m["name"]: m for m in members}
+        cid = str(conv_id)
 
         history = await self._history_for_transcript(conv_id)
         transcript = build_transcript(history)
@@ -558,12 +576,19 @@ class GroupChatService:
         if mentioned:
             speakers = [mentioned]
         else:
+            # 广播「AI 正在想怎么接话」占位，消除调度期间的空窗
+            await bus.publish(cid, "thinking", {})
             host_model, _ = await build_default_chat_model(
                 self.session, owner_id, temperature=0.3, streaming=False
             )
             speakers = await decide_speakers(
                 host_model, members, transcript, user_text
             )
+
+        # 主持人判定本轮纯属真人之间聊天 → AI 不接话，直接收尾
+        if not speakers:
+            await bus.publish(cid, "done", {"conversation_id": cid})
+            return
 
         speaker_model, self._speaker_config = await build_default_chat_model(
             self.session, owner_id, temperature=0.8, streaming=True
@@ -610,7 +635,6 @@ class GroupChatService:
                 logger.warning("群聊多模态准备失败（降级为纯文本）: %s", e)
                 image_parts = []
 
-        cid = str(conv_id)
         for name in speakers:
             member = name_to_member.get(name)
             if not member:
@@ -697,7 +721,11 @@ class GroupChatService:
     async def events(
         self, user_id: uuid.UUID, conv_id: uuid.UUID
     ) -> AsyncGenerator[str, None]:
-        """SSE：订阅群聊频道，把全员发言与 AI 接话事件实时推给前端。"""
+        """SSE：订阅群聊频道，把全员发言与 AI 接话事件实时推给前端。
+
+        附带在线状态维护：建立连接即标记在线、每次心跳刷新、断开时标记离线，
+        并广播 presence 事件让其他成员实时更新「谁在线」。
+        """
         try:
             await self.get_group_for_member(user_id, conv_id)
         except BizError as e:
@@ -708,16 +736,26 @@ class GroupChatService:
             await self.session.close()
         except Exception as e:
             logger.warning("释放群聊订阅 session 失败: %s", e)
+
+        cid = str(conv_id)
+        uid = str(user_id)
+        await bus.mark_online(cid, uid)
+        await bus.publish(cid, "presence", {"type": "online", "user_id": uid})
         # 建立连接先吐一个 ready，前端据此判定订阅成功
-        yield _sse("ready", {"conversation_id": str(conv_id)})
-        async for evt in bus.subscribe(str(conv_id)):
-            event = evt.get("event") or "message"
-            if event == "_ping":
-                # SSE 注释行：保活，不触发前端事件
-                yield ": ping\n\n"
-                continue
-            data = evt.get("data") or {}
-            yield _sse(event, data)
+        yield _sse("ready", {"conversation_id": cid})
+        try:
+            async for evt in bus.subscribe(cid):
+                event = evt.get("event") or "message"
+                if event == "_ping":
+                    # 心跳：刷新在线状态 + SSE 注释保活（不触发前端事件）
+                    await bus.mark_online(cid, uid)
+                    yield ": ping\n\n"
+                    continue
+                data = evt.get("data") or {}
+                yield _sse(event, data)
+        finally:
+            await bus.mark_offline(cid, uid)
+            await bus.publish(cid, "presence", {"type": "offline", "user_id": uid})
 
     async def stream_group_chat(
         self, user_id: uuid.UUID, body: GroupChatStreamRequest
