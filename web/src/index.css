@@ -1734,6 +1734,17 @@ body {
 }
 
 /* 数字统计卡：玻璃 + 顶部彩条 + 悬浮抬升 */
+.dash-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1d2939;
+  margin: 6px 0 12px;
+}
+.dash-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
 .stat-card {
   position: relative;
   overflow: hidden;
@@ -4084,6 +4095,29 @@ body {
 .gc-bubble--ai .markdown-body {
   font-size: 14px;
 }
+/* 其他真人成员的气泡（区别于 AI 角色：浅蓝灰底） */
+.gc-bubble--peer {
+  background: #eef2fb;
+  color: #1d2939;
+  border: 1px solid #e3e9f7;
+  border-top-left-radius: 5px;
+}
+/* 邀请弹窗 */
+.gc-invite-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.gc-invite-humans {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+.gc-invite-humans-title {
+  font-size: 13px;
+  color: #667085;
+  margin-bottom: 10px;
+}
 /* 打字省略号动画 */
 .gc-typing {
   display: inline-flex;
@@ -4666,5 +4700,119 @@ body {
 @media (max-width: 768px) {
   .pg-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ── 登录/注册页（苹果风：居中极简、浅色、单列自适应） ── */
+.applogin {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background: linear-gradient(180deg, #fbfbfd 0%, #f1f3f8 100%);
+  overflow: hidden;
+}
+/* 柔和光斑背景，不抢眼 */
+.applogin-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(420px 420px at 18% 12%, rgba(21, 94, 239, 0.10), transparent 70%),
+    radial-gradient(460px 460px at 84% 88%, rgba(124, 77, 255, 0.08), transparent 70%);
+}
+.applogin-box {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 400px;
+  margin-inline: auto;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 22px;
+  padding: 40px 34px 30px;
+  box-shadow: 0 24px 70px -30px rgba(16, 24, 40, 0.30);
+}
+.applogin-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  object-fit: cover;
+  box-shadow: 0 8px 22px -8px rgba(21, 94, 239, 0.45);
+}
+.applogin-title {
+  margin: 18px 0 6px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: #1d1d1f;
+}
+.applogin-sub {
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: #86868b;
+}
+.applogin-box .ant-tabs-nav {
+  margin-bottom: 18px;
+}
+.applogin-box .ant-tabs-nav::before {
+  border-bottom: none;
+}
+/* 苹果风输入框：浅灰填充、大圆角、聚焦淡蓝环 */
+.applogin-box .ant-input-affix-wrapper {
+  border-radius: 12px;
+  background: #f5f5f7;
+  border: 1px solid transparent;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.applogin-box .ant-input-affix-wrapper:hover {
+  background: #f0f0f3;
+}
+.applogin-box .ant-input-affix-wrapper-focused,
+.applogin-box .ant-input-affix-wrapper:focus-within {
+  background: #fff;
+  border-color: #155eef;
+  box-shadow: 0 0 0 3px rgba(21, 94, 239, 0.14);
+}
+.applogin-box .ant-input-affix-wrapper .ant-input {
+  background: transparent;
+}
+.applogin-box .ant-input-prefix {
+  color: #b0b0b8;
+  margin-inline-end: 8px;
+}
+.applogin-box .ant-btn-primary {
+  border-radius: 12px;
+}
+.login2-remember {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.applogin-foot {
+  margin-top: 22px;
+  font-size: 12px;
+  color: #b6bdc9;
+}
+@media (max-width: 768px) {
+  .applogin {
+    padding: 24px 16px;
+  }
+  .applogin-box {
+    padding: 32px 22px 24px;
+    border-radius: 20px;
+  }
+  .applogin-title {
+    font-size: 25px;
   }
 }
