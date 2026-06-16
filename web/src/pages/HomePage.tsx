@@ -46,11 +46,6 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false)
   const [welcomeOpen, setWelcomeOpen] = useState(false)
 
-  // 首次登录弹欢迎引导（localStorage 记忆，只弹一次）
-  useEffect(() => {
-    if (!localStorage.getItem(WELCOME_SEEN_KEY)) setWelcomeOpen(true)
-  }, [])
-
   const closeWelcome = () => {
     localStorage.setItem(WELCOME_SEEN_KEY, '1')
     setWelcomeOpen(false)
@@ -267,6 +262,13 @@ export default function HomePage() {
   // 基础没配好（缺对话或向量模型）= 新用户态：首屏聚焦引导、隐藏空数据
   // models 还没加载完（null）时不判定为新用户，避免闪现
   const needsSetup = models !== null && !allReady
+
+  // 欢迎引导：仅对「还没配好基础」的新用户首次弹一次，老用户不打扰
+  useEffect(() => {
+    if (needsSetup && !localStorage.getItem(WELCOME_SEEN_KEY)) {
+      setWelcomeOpen(true)
+    }
+  }, [needsSetup])
 
   // 数据概览 KPI 卡片（情绪指数若有则置顶）
   const healthIndex = emotionProfile?.health_index ?? 0
