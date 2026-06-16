@@ -33,7 +33,7 @@ export const PROVIDER_DEFAULT_BASE_URL: Record<Provider, string> = {
   openai: 'https://api.openai.com/v1',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   doubao: 'https://ark.cn-beijing.volces.com/api/v3',
-  deepseek: 'https://api.deepseek.com/v1',
+  deepseek: 'https://api.deepseek.com',
   zhipu: 'https://open.bigmodel.cn/api/paas/v4',
   qianfan: '',
   tavily: '',

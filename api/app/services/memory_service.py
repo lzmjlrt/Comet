@@ -211,7 +211,7 @@ class MemoryService:
         await MemoryGraphRepository().delete_insight(str(user_id), insight_id)
 
     async def get_graph(self, user_id: uuid.UUID) -> dict:
-        """知识图谱全量数据：nodes（实体）+ edges（关系）+ communities。"""
+        """知识图谱全量数据：nodes（五类节点）+ edges（溯源/语义边）+ communities。"""
         from app.repositories.neo4j.community_repository import CommunityRepository
         from app.repositories.neo4j.memory_graph_repository import (
             MemoryGraphRepository,
@@ -219,14 +219,22 @@ class MemoryService:
 
         uid = str(user_id)
         repo = MemoryGraphRepository()
-        raw_nodes = await repo.graph_nodes(uid)
-        raw_edges = await repo.graph_edges(uid)
+        raw_nodes = await repo.graph_full_nodes(uid)
+        raw_edges = await repo.graph_full_edges(uid)
         communities = await CommunityRepository().list_communities(uid)
+
+        def _disp_name(kind: str, name: str | None) -> str:
+            text = (name or "").strip().replace("\n", " ")
+            if kind in ("Entity", "Event"):
+                return text
+            # 溯源类节点（对话/片段/陈述）名称可能很长，截断用于标签显示
+            return text[:24] + ("…" if len(text) > 24 else "")
 
         nodes = [
             {
                 "id": n.get("id"),
-                "name": n.get("name"),
+                "kind": n.get("kind") or "Entity",
+                "name": _disp_name(n.get("kind") or "Entity", n.get("name")),
                 "type": n.get("type"),
                 "description": n.get("description") or "",
                 "community_id": n.get("community_id"),
@@ -244,6 +252,7 @@ class MemoryService:
             {
                 "source": e.get("source"),
                 "target": e.get("target"),
+                "rel": e.get("rel") or "",
                 "predicate": e.get("predicate") or "",
                 "predicate_surface": e.get("predicate_surface") or "",
             }

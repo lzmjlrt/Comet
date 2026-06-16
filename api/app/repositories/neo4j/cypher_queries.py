@@ -493,6 +493,36 @@ RETURN a.id AS source, b.id AS target,
        r.predicate AS predicate, r.predicate_surface AS predicate_surface
 """
 
+# 全量图（含溯源层）：对话/片段/陈述/实体/事件 五类节点
+GRAPH_FULL_NODES = """
+MATCH (n {user_id: $user_id})
+WHERE n:Dialogue OR n:Chunk OR n:Statement OR n:Entity OR n:Event
+WITH n, head(labels(n)) AS kind
+RETURN n.id AS id, kind AS kind,
+       CASE kind
+         WHEN 'Entity' THEN n.name
+         WHEN 'Event' THEN n.title
+         WHEN 'Statement' THEN n.statement
+         ELSE n.content
+       END AS name,
+       n.type AS type, n.description AS description, n.community_id AS community_id,
+       coalesce(n.importance, 0.5) AS importance,
+       coalesce(n.memory_layer, 'short_term') AS memory_layer,
+       coalesce(n.access_count, 0) AS access_count,
+       coalesce(n.mention_count, 1) AS mention_count,
+       coalesce(n.aliases, []) AS aliases,
+       coalesce(n.core_facts, []) AS core_facts,
+       coalesce(n.traits, []) AS traits
+"""
+
+# 全量图（含溯源层）：五类溯源/语义边
+GRAPH_FULL_EDGES = """
+MATCH (a {user_id: $user_id})-[r]->(b {user_id: $user_id})
+WHERE type(r) IN ['HAS_CHUNK', 'HAS_STATEMENT', 'MENTIONS', 'RELATION', 'INVOLVES']
+RETURN a.id AS source, b.id AS target, type(r) AS rel,
+       r.predicate AS predicate, r.predicate_surface AS predicate_surface
+"""
+
 # 单实体一跳子图：中心实体 + 邻居 + 它们之间的关系边
 ENTITY_SUBGRAPH_NODES = """
 MATCH (c:Entity {user_id: $user_id, id: $entity_id})

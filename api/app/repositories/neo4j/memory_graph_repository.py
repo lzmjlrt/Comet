@@ -425,6 +425,18 @@ class MemoryGraphRepository:
             result = await session.run(cq.GRAPH_EDGES, user_id=user_id)
             return [dict(r) async for r in result]
 
+    async def graph_full_nodes(self, user_id: str) -> list[dict[str, Any]]:
+        """全量节点（含溯源层：对话/片段/陈述/实体/事件）。"""
+        async with self._driver.session() as session:
+            result = await session.run(cq.GRAPH_FULL_NODES, user_id=user_id)
+            return [dict(r) async for r in result]
+
+    async def graph_full_edges(self, user_id: str) -> list[dict[str, Any]]:
+        """全量边（溯源 + 语义：HAS_CHUNK/HAS_STATEMENT/MENTIONS/RELATION/INVOLVES）。"""
+        async with self._driver.session() as session:
+            result = await session.run(cq.GRAPH_FULL_EDGES, user_id=user_id)
+            return [dict(r) async for r in result]
+
     async def entity_subgraph(
         self, user_id: str, entity_id: str
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

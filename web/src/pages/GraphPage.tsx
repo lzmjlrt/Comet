@@ -1,124 +1,43 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Space, Spin, Tag, Typography, message } from 'antd'
 import { MergeCellsOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Graph } from '@antv/x6'
+import ReactECharts from 'echarts-for-react'
 import { memoryApi, type GraphData, type GraphNode } from '@/api/memories'
 
 const { Text, Paragraph } = Typography
 
-// 社区调色板：按社区 id 稳定取色；无社区按实体类型回退
-const PALETTE = [
-  '#155EEF', '#369F21', '#FF5D34', '#9254DE', '#13A8A8',
-  '#FA8C16', '#EB2F96', '#2F54EB', '#52C41A', '#FAAD14',
-  '#722ED1', '#08979C', '#D4380D', '#C41D7F', '#1677FF',
-]
-
-function colorForKey(key: string, table: Map<string, string>): string {
-  if (!table.has(key)) {
-    table.set(key, PALETTE[table.size % PALETTE.length])
-  }
-  return table.get(key)!
+// 节点大类：颜色 + 形状 + 中文名。实体/事件默认显示，溯源层（陈述/片段/对话）默认隐藏，
+// 点图例对应的圆点即可点亮查看「这条记忆从哪来」。
+const KIND_ORDER = ['Entity', 'Event', 'Statement', 'Chunk', 'Dialogue'] as const
+const KIND_META: Record<string, { label: string; color: string; symbol: string }> = {
+  Entity: { label: '实体', color: '#155EEF', symbol: 'circle' },
+  Event: { label: '事件', color: '#FF8A34', symbol: 'diamond' },
+  Statement: { label: '陈述', color: '#52C41A', symbol: 'roundRect' },
+  Chunk: { label: '片段', color: '#9254DE', symbol: 'rect' },
+  Dialogue: { label: '对话', color: '#13A8A8', symbol: 'triangle' },
+}
+// 边类型可读名（tooltip 用）
+const REL_LABEL: Record<string, string> = {
+  HAS_CHUNK: '包含片段',
+  HAS_STATEMENT: '包含陈述',
+  MENTIONS: '提及',
+  RELATION: '关系',
+  INVOLVES: '涉及',
 }
 
-// 力导向布局：相连节点吸引、所有节点排斥，迭代后形成自然的簇状分布（不再排成圆圈）。
-// 系数调到中等密度——既不挤成一团，也不散得太开。
-function forceLayout(
-  nodes: GraphNode[],
-  edges: { source: string; target: string }[],
-  width: number,
-  height: number,
-): Map<string, { x: number; y: number }> {
-  const pos = new Map<string, { x: number; y: number }>()
-  const cx = width / 2
-  const cy = height / 2
-  const N = nodes.length
-
-  // 初始：在中心附近小范围随机散布
-  nodes.forEach((n) => {
-    const a = Math.random() * 2 * Math.PI
-    const r = Math.random() * Math.min(width, height) * 0.3
-    pos.set(n.id, { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) })
-  })
-  if (N <= 1) return pos
-
-  const k = Math.sqrt((width * height) / N) * 1.25 // 理想边长，越大越松
-  const iterations = 320
-  let temp = Math.min(width, height) / 5
-
-  for (let it = 0; it < iterations; it++) {
-    const disp = new Map<string, { x: number; y: number }>()
-    nodes.forEach((n) => disp.set(n.id, { x: 0, y: 0 }))
-
-    // 排斥力
-    for (let i = 0; i < N; i++) {
-      const a = pos.get(nodes[i].id)!
-      const da = disp.get(nodes[i].id)!
-      for (let j = i + 1; j < N; j++) {
-        const b = pos.get(nodes[j].id)!
-        let dx = a.x - b.x
-        let dy = a.y - b.y
-        let dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist < 0.01) {
-          dx = Math.random() - 0.5
-          dy = Math.random() - 0.5
-          dist = 0.01
-        }
-        const f = (k * k) / dist
-        const fx = (dx / dist) * f
-        const fy = (dy / dist) * f
-        da.x += fx
-        da.y += fy
-        const db = disp.get(nodes[j].id)!
-        db.x -= fx
-        db.y -= fy
-      }
-    }
-
-    // 吸引力（相连节点）
-    edges.forEach((e) => {
-      const a = pos.get(e.source)
-      const b = pos.get(e.target)
-      if (!a || !b) return
-      const dx = a.x - b.x
-      const dy = a.y - b.y
-      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01
-      const f = (dist * dist) / k
-      const fx = (dx / dist) * f
-      const fy = (dy / dist) * f
-      disp.get(e.source)!.x -= fx
-      disp.get(e.source)!.y -= fy
-      disp.get(e.target)!.x += fx
-      disp.get(e.target)!.y += fy
-    })
-
-    // 应用位移（限温）+ 轻微向心力，防止离群节点飘太远
-    nodes.forEach((n) => {
-      const d = disp.get(n.id)!
-      const p = pos.get(n.id)!
-      const dl = Math.sqrt(d.x * d.x + d.y * d.y) || 0.01
-      p.x += (d.x / dl) * Math.min(dl, temp)
-      p.y += (d.y / dl) * Math.min(dl, temp)
-      p.x += (cx - p.x) * 0.008
-      p.y += (cy - p.y) * 0.008
-    })
-    temp *= 0.97
-  }
-  return pos
+interface EchartsParam {
+  dataType?: string
+  dataIndex?: number
 }
 
 export default function GraphPage() {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const graphRef = useRef<Graph | null>(null)
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<GraphData | null>(null)
   const [selected, setSelected] = useState<GraphNode | null>(null)
   const [merging, setMerging] = useState(false)
-  const adjRef = useRef<Map<string, Set<string>>>(new Map())
 
-  const colorTable = useMemo(() => new Map<string, string>(), [])
-
-  const reload = () => {
-    setLoading(true)
+  const load = (showLoading = true) => {
+    if (showLoading) setLoading(true)
     setSelected(null)
     memoryApi
       .graph()
@@ -128,20 +47,8 @@ export default function GraphPage() {
   }
 
   useEffect(() => {
-    let mounted = true
-    setLoading(true)
-    memoryApi
-      .graph()
-      .then(({ data }) => {
-        if (mounted) setData(data)
-      })
-      .catch((e) => message.error((e as Error).message))
-      .finally(() => {
-        if (mounted) setLoading(false)
-      })
-    return () => {
-      mounted = false
-    }
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const onMergeDuplicates = async () => {
@@ -149,7 +56,7 @@ export default function GraphPage() {
     try {
       const { data } = await memoryApi.mergeDuplicates()
       message.success(`已合并 ${data.removed} 个重复实体`)
-      reload()
+      load()
     } catch (e) {
       message.error((e as Error).message)
     } finally {
@@ -157,109 +64,154 @@ export default function GraphPage() {
     }
   }
 
-  useEffect(() => {
-    if (!data || !containerRef.current) return
-    if (data.nodes.length === 0) return
+  const option = useMemo(() => {
+    if (!data || data.nodes.length === 0) return null
 
-    const container = containerRef.current
-    const width = container.clientWidth || 800
-    const height = container.clientHeight || 600
-
-    const graph = new Graph({
-      container,
-      width,
-      height,
-      background: { color: '#FAFAFA' },
-      panning: true,
-      mousewheel: { enabled: true, modifiers: [], minScale: 0.2, maxScale: 3 },
-      interacting: { nodeMovable: true },
-    })
-    graphRef.current = graph
-
-    const adj = new Map<string, Set<string>>()
-    data.nodes.forEach((nd) => adj.set(nd.id, new Set()))
+    // 连接度
+    const degree = new Map<string, number>()
+    data.nodes.forEach((n) => degree.set(n.id, 0))
     data.edges.forEach((e) => {
-      adj.get(e.source)?.add(e.target)
-      adj.get(e.target)?.add(e.source)
+      degree.set(e.source, (degree.get(e.source) ?? 0) + 1)
+      degree.set(e.target, (degree.get(e.target) ?? 0) + 1)
     })
-    adjRef.current = adj
+    const maxDeg = Math.max(1, ...Array.from(degree.values()))
 
-    // 力导向布局：相关节点聚成簇，整体中等密度（不再排成圆圈）
-    const pos = forceLayout(data.nodes, data.edges, width, height)
+    // 分类 = 节点大类（只保留出现过的，固定顺序）
+    const kindOf = (n: GraphNode) => (n.kind && KIND_META[n.kind] ? n.kind : 'Entity')
+    const presentKinds = KIND_ORDER.filter((k) => data.nodes.some((n) => kindOf(n) === k))
+    const catIndex = new Map<string, number>()
+    presentKinds.forEach((k, i) => catIndex.set(k, i))
+    const categories = presentKinds.map((k) => ({
+      name: KIND_META[k].label,
+      itemStyle: { color: KIND_META[k].color },
+    }))
+    // 默认只显示实体 + 事件，溯源层默认隐藏
+    const legendSelected: Record<string, boolean> = {}
+    presentKinds.forEach((k) => {
+      legendSelected[KIND_META[k].label] = k === 'Entity' || k === 'Event'
+    })
 
-    data.nodes.forEach((node) => {
-      const p = pos.get(node.id)!
-      const key = node.community_id || `type:${node.type}`
-      const color = colorForKey(key, colorTable)
-      // 节点大小按重要度缩放（18~32px），名称显示在节点下方
-      const importance = typeof node.importance === 'number' ? node.importance : 0.5
-      const size = Math.round(18 + importance * 14)
-      graph.addNode({
-        id: node.id,
-        x: p.x - size / 2,
-        y: p.y - size / 2,
-        width: size,
-        height: size,
-        shape: 'rect',
-        label: node.name,
-        attrs: {
-          body: { fill: color, stroke: '#fff', strokeWidth: 2, rx: 6, ry: 6 },
+    const idToIdx = new Map<string, number>()
+    data.nodes.forEach((n, i) => idToIdx.set(n.id, i))
+
+    const nodes = data.nodes.map((n) => {
+      const kind = kindOf(n)
+      const deg = degree.get(n.id) ?? 0
+      const imp = typeof n.importance === 'number' ? n.importance : 0.5
+      let size = 13
+      if (kind === 'Entity') {
+        size = Math.min(56, Math.max(16, Math.round(18 + (deg / maxDeg) * 30 + imp * 8)))
+      } else if (kind === 'Event') {
+        size = 24
+      }
+      return {
+        name: n.name,
+        symbol: KIND_META[kind].symbol,
+        symbolSize: size,
+        category: catIndex.get(kind),
+        value: deg,
+        // 溯源层默认不显示标签（点亮后靠 hideOverlap 控制密度）
+        label: { show: kind === 'Entity' || kind === 'Event' },
+      }
+    })
+
+    const links = data.edges
+      .map((e) => {
+        const s = idToIdx.get(e.source)
+        const t = idToIdx.get(e.target)
+        if (s === undefined || t === undefined) return null
+        // 溯源边淡虚线，语义关系边实线
+        const isRelation = e.rel === 'RELATION'
+        return {
+          source: s,
+          target: t,
+          lineStyle: isRelation
+            ? { color: '#C9CDD4', width: 1.2, opacity: 0.7 }
+            : { color: '#E5E6EB', width: 1, type: 'dashed', opacity: 0.6 },
+        }
+      })
+      .filter((l): l is NonNullable<typeof l> => l !== null)
+
+    const repulsion = data.nodes.length > 60 ? 380 : data.nodes.length > 30 ? 280 : 200
+
+    return {
+      tooltip: {
+        confine: true,
+        formatter: (p: EchartsParam) => {
+          if (p.dataType === 'edge' && p.dataIndex !== undefined) {
+            const e = data.edges[p.dataIndex]
+            if (!e) return ''
+            return e.predicate_surface || e.predicate || REL_LABEL[e.rel ?? ''] || ''
+          }
+          if (p.dataType === 'node' && p.dataIndex !== undefined) {
+            const n = data.nodes[p.dataIndex]
+            if (!n) return ''
+            const kindLabel = KIND_META[n.kind ?? 'Entity']?.label ?? '实体'
+            const facts = (n.core_facts ?? [])
+              .slice(0, 3)
+              .map((f) => `• ${f}`)
+              .join('<br/>')
+            return `<b>${n.name}</b> <span style="color:#98A2B3">${
+              n.type || kindLabel
+            }</span>${facts ? `<br/>${facts}` : ''}`
+          }
+          return ''
+        },
+      },
+      legend: [
+        {
+          data: categories.map((c) => c.name),
+          selected: legendSelected,
+          type: 'scroll',
+          bottom: 0,
+          left: 'center',
+          icon: 'circle',
+          textStyle: { color: '#667085' },
+        },
+      ],
+      series: [
+        {
+          type: 'graph',
+          layout: 'force',
+          roam: true,
+          draggable: true,
+          categories,
+          data: nodes,
+          links,
+          edgeSymbol: ['none', 'arrow'],
+          edgeSymbolSize: 6,
+          force: {
+            repulsion,
+            edgeLength: [70, 160],
+            gravity: 0.05,
+            friction: 0.6,
+          },
           label: {
-            text: node.name,
-            fill: '#1D2129',
-            fontSize: 12,
-            fontWeight: 500,
-            refX: '50%',
-            refY: '130%',
-            textAnchor: 'middle',
-            textVerticalAnchor: 'top',
+            show: true,
+            position: 'right',
+            fontSize: 11,
+            color: '#1D2129',
+          },
+          labelLayout: { hideOverlap: true },
+          emphasis: {
+            focus: 'adjacency',
+            label: { show: true, fontWeight: 'bold' },
+            lineStyle: { width: 2.5, color: '#155EEF', opacity: 1 },
           },
         },
-        data: node,
-      })
-    })
-
-    data.edges.forEach((e) => {
-      graph.addEdge({
-        source: e.source,
-        target: e.target,
-        attrs: {
-          line: {
-            stroke: '#C0C4CC',
-            strokeWidth: 1.2,
-            targetMarker: { name: 'classic', size: 5 },
-          },
-        },
-        labels: e.predicate
-          ? [
-              {
-                attrs: {
-                  label: { text: e.predicate, fontSize: 10, fill: '#8C8C8C' },
-                  body: { fill: '#FAFAFA', stroke: 'none' },
-                },
-              },
-            ]
-          : [],
-      })
-    })
-
-    graph.on('node:click', ({ node }) => {
-      const nd = node.getData<GraphNode>()
-      setSelected(nd)
-      highlight(graph, node.id, adjRef.current)
-    })
-    graph.on('blank:click', () => {
-      setSelected(null)
-      resetHighlight(graph)
-    })
-
-    graph.zoomToFit({ padding: 40, maxScale: 1 })
-
-    return () => {
-      graph.dispose()
-      graphRef.current = null
+      ],
     }
-  }, [data, colorTable])
+  }, [data])
+
+  const onEvents = {
+    click: (p: EchartsParam) => {
+      if (p.dataType === 'node' && p.dataIndex !== undefined && data) {
+        const n = data.nodes[p.dataIndex]
+        // 只有实体有完整画像详情；溯源类节点点了不弹面板
+        if (n && (n.kind === 'Entity' || !n.kind)) setSelected(n)
+      }
+    },
+  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -270,7 +222,7 @@ export default function GraphPage() {
             <Button icon={<MergeCellsOutlined />} loading={merging} onClick={onMergeDuplicates}>
               合并重复
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={reload} disabled={loading}>
+            <Button icon={<ReloadOutlined />} onClick={() => load()} disabled={loading}>
               刷新
             </Button>
           </Space>
@@ -289,7 +241,14 @@ export default function GraphPage() {
             </div>
           ) : (
             <>
-              <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+              {option && (
+                <ReactECharts
+                  option={option}
+                  notMerge
+                  style={{ width: '100%', height: '100%' }}
+                  onEvents={onEvents}
+                />
+              )}
               {selected && (
                 <div
                   style={{
@@ -344,21 +303,35 @@ export default function GraphPage() {
                   <div style={{ fontSize: 12, color: '#98A2B3' }}>
                     被提及 {selected.mention_count ?? 1} 次 · 被检索 {selected.access_count ?? 0} 次
                   </div>
+                  <Button
+                    size="small"
+                    type="text"
+                    style={{ marginTop: 8, paddingLeft: 0, color: '#98A2B3' }}
+                    onClick={() => setSelected(null)}
+                  >
+                    关闭
+                  </Button>
                 </div>
               )}
               <div
                 style={{
                   position: 'absolute',
                   left: 16,
-                  bottom: 16,
-                  background: 'rgba(255,255,255,0.9)',
+                  top: 16,
+                  background: 'rgba(255,255,255,0.92)',
                   borderRadius: 8,
                   padding: '6px 10px',
                   fontSize: 12,
                   color: '#667085',
+                  pointerEvents: 'none',
+                  maxWidth: '60%',
                 }}
               >
-                {data.nodes.length} 个实体 · {data.edges.length} 条关系 · 颜色区分主题社区 · 大小表示重要度
+                {data.nodes.length} 个节点 · {data.edges.length} 条关系
+                <br />
+                默认只显示实体/事件，点底部圆点可点亮溯源层（陈述/片段/对话）
+                <br />
+                大小=连接数 · 滚轮缩放、拖拽平移 · 点实体看详情
               </div>
             </>
           )}
@@ -366,31 +339,4 @@ export default function GraphPage() {
       </Card>
     </div>
   )
-}
-
-function highlight(graph: Graph, nodeId: string, adj: Map<string, Set<string>>) {
-  const neighbors = adj.get(nodeId) || new Set<string>()
-  graph.getNodes().forEach((node) => {
-    const isActive = node.id === nodeId || neighbors.has(node.id)
-    node.attr('body/opacity', isActive ? 1 : 0.2)
-    node.attr('label/opacity', isActive ? 1 : 0.2)
-  })
-  graph.getEdges().forEach((edge) => {
-    const s = edge.getSourceCellId()
-    const t = edge.getTargetCellId()
-    const isActive = s === nodeId || t === nodeId
-    edge.attr('line/stroke', isActive ? '#155EEF' : '#E5E6EB')
-    edge.attr('line/opacity', isActive ? 1 : 0.2)
-  })
-}
-
-function resetHighlight(graph: Graph) {
-  graph.getNodes().forEach((node) => {
-    node.attr('body/opacity', 1)
-    node.attr('label/opacity', 1)
-  })
-  graph.getEdges().forEach((edge) => {
-    edge.attr('line/stroke', '#C0C4CC')
-    edge.attr('line/opacity', 1)
-  })
 }
