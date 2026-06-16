@@ -106,6 +106,7 @@ export interface GraphNode {
   type: string
   description: string
   community_id: string | null
+  kind?: string // 节点大类：Entity/Event/Statement/Chunk/Dialogue
   importance?: number
   memory_layer?: string
   access_count?: number
@@ -118,6 +119,7 @@ export interface GraphNode {
 export interface GraphEdge {
   source: string
   target: string
+  rel?: string // 边类型：HAS_CHUNK/HAS_STATEMENT/MENTIONS/RELATION/INVOLVES
   predicate: string
   predicate_surface: string
 }

@@ -351,6 +351,8 @@ function InsightsBanner() {
   const [insights, setInsights] = useState<Insight[]>([])
   const [loading, setLoading] = useState(true)
   const [reflecting, setReflecting] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const COLLAPSE_LIMIT = 6
 
   const load = async () => {
     try {
@@ -423,21 +425,30 @@ function InsightsBanner() {
           也可以点「重新认识你」马上生成。
         </div>
       ) : (
-        <div className="insight-grid">
-          {insights.map((it) => (
-            <div key={it.id} className="insight-item">
-              <div className="insight-item-head">
-                <Tag color="geekblue" style={{ margin: 0 }}>
-                  {it.theme}
-                </Tag>
-                <Popconfirm title="删除这条洞察？" onConfirm={() => onDelete(it.id)}>
-                  <DeleteOutlined className="insight-del" />
-                </Popconfirm>
+        <>
+          <div className="insight-grid">
+            {(expanded ? insights : insights.slice(0, COLLAPSE_LIMIT)).map((it) => (
+              <div key={it.id} className="insight-item">
+                <div className="insight-item-head">
+                  <Tag color="geekblue" style={{ margin: 0 }}>
+                    {it.theme}
+                  </Tag>
+                  <Popconfirm title="删除这条洞察？" onConfirm={() => onDelete(it.id)}>
+                    <DeleteOutlined className="insight-del" />
+                  </Popconfirm>
+                </div>
+                <div className="insight-content">{it.content}</div>
               </div>
-              <div className="insight-content">{it.content}</div>
+            ))}
+          </div>
+          {insights.length > COLLAPSE_LIMIT && (
+            <div style={{ textAlign: 'center', marginTop: 10 }}>
+              <Button type="link" onClick={() => setExpanded((v) => !v)}>
+                {expanded ? '收起' : `展开全部 ${insights.length} 条`}
+              </Button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   )

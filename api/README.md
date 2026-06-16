@@ -151,7 +151,7 @@ Comet 不在 `.env` 里写任何 LLM 的 API Key。**所有模型与其 API Key 
 | `openai` | https://api.openai.com/v1 |
 | `qwen`（通义千问） | https://dashscope.aliyuncs.com/compatible-mode/v1 |
 | `doubao`（豆包/火山方舟） | https://ark.cn-beijing.volces.com/api/v3 |
-| `deepseek` | https://api.deepseek.com/v1 |
+| `deepseek` | https://api.deepseek.com |
 | `zhipu`（智谱） | https://open.bigmodel.cn/api/paas/v4 |
 
 联网搜索（`websearch` 类型）provider：`qianfan`（百度千帆 AI 搜索）/ `tavily`。
