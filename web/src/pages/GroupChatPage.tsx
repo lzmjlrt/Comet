@@ -20,6 +20,7 @@ import type { InputRef, MenuProps } from 'antd'
 import {
   ArrowUpOutlined,
   CloseCircleFilled,
+  CopyOutlined,
   DeleteOutlined,
   ExclamationCircleFilled,
   FormOutlined,
@@ -30,6 +31,8 @@ import {
   PlusOutlined,
   SendOutlined,
   ShareAltOutlined,
+  StarFilled,
+  StarOutlined,
   TeamOutlined,
   ToolOutlined,
   UsergroupAddOutlined,
@@ -52,7 +55,8 @@ import VoiceInputButton from '@/components/VoiceInputButton'
 import { useAuthStore } from '@/stores/authStore'
 import { useGroupHeaderStore } from '@/stores/groupHeaderStore'
 import { copyText } from '@/utils/clipboard'
-import { resolveToolMeta } from '@/pages/chat/types'
+import { favoriteApi } from '@/api/favorites'
+import { resolveToolMeta, formatMsgTime } from '@/pages/chat/types'
 import ShareModal from '@/pages/chat/ShareModal'
 
 // 群聊页内的消息模型（含流式态 + 发送者 + 工具调用标记）
@@ -91,6 +95,7 @@ interface GroupUiMessage {
   toolRuns?: GroupToolRun[]
   images?: string[]
   streaming?: boolean
+  createdAt?: string
 }
 
 // 把后端群聊历史消息转成页面消息模型（openConversation 与重连 resync 复用）
@@ -104,6 +109,7 @@ type RawGroupMsg = {
   is_me?: boolean
   images?: string[]
   meta_data?: { tool_calls?: { tool: string; query?: string }[] } | null
+  created_at?: string | null
 }
 function toUiMessage(m: RawGroupMsg): GroupUiMessage {
   return {
@@ -115,6 +121,7 @@ function toUiMessage(m: RawGroupMsg): GroupUiMessage {
     senderUserId: m.sender_user_id,
     isMe: m.is_me,
     images: m.images,
+    createdAt: m.created_at ?? undefined,
     toolRuns: m.meta_data?.tool_calls?.map((t) => ({
       tool: t.tool,
       query: t.query,
@@ -266,6 +273,50 @@ export default function GroupChatPage() {
   const inputRef = useRef<InputRef>(null)
   // 实时订阅控制：切换会话/卸载时 abort 旧连接
   const subRef = useRef<AbortController | null>(null)
+  // 工具明细展开的消息 id 集合（默认折叠成「调用了 N 次工具」汇总条）
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(() => new Set())
+  // 本地收藏态：msgId -> favoriteId（收藏成功后金星，可取消）
+  const [favIds, setFavIds] = useState<Record<string, string>>({})
+
+  const toggleTools = (id: string) =>
+    setExpandedTools((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const onCopyMsg = async (text: string) => {
+    const ok = await copyText(text)
+    if (ok) antdMessage.success('已复制')
+    else antdMessage.error('复制失败')
+  }
+
+  const onFavMsg = async (m: GroupUiMessage) => {
+    const existing = favIds[m.id]
+    try {
+      if (existing) {
+        await favoriteApi.remove(existing)
+        setFavIds((prev) => {
+          const next = { ...prev }
+          delete next[m.id]
+          return next
+        })
+        antdMessage.success('已取消收藏')
+      } else {
+        const { data } = await favoriteApi.add('message', m.id, {
+          title: `${m.senderName || 'AI'} 的发言`,
+          summary: m.content.slice(0, 120),
+          conversation_id: activeId ?? undefined,
+          is_group: true,
+        })
+        setFavIds((prev) => ({ ...prev, [m.id]: data.id }))
+        antdMessage.success('已收藏')
+      }
+    } catch (e) {
+      antdMessage.error((e as Error).message)
+    }
+  }
   // 当前正在流式输出的 AI 气泡临时 id（speaker_start 设、speaker_end 清）
   const streamingRef = useRef<string | null>(null)
   // 已渲染过的真人消息 id 集合（say 乐观插入与 SSE 回声去重）
@@ -443,6 +494,7 @@ export default function GroupChatPage() {
             senderUserId: d.user_id,
             senderName: d.nickname,
             isMe: d.user_id === user?.id,
+            createdAt: new Date().toISOString(),
           },
         ])
       },
@@ -507,7 +559,9 @@ export default function GroupChatPage() {
         const cur = streamingRef.current
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === cur ? { ...m, id: d.message_id, streaming: false } : m,
+            m.id === cur
+              ? { ...m, id: d.message_id, streaming: false, createdAt: new Date().toISOString() }
+              : m,
           ),
         )
         streamingRef.current = null
@@ -1099,6 +1153,11 @@ export default function GroupChatPage() {
                       {m.content && (
                         <div className="gc-bubble gc-bubble--user">{m.content}</div>
                       )}
+                      {m.content && m.createdAt && (
+                        <div className="gc-msg-time gc-msg-time--me">
+                          {formatMsgTime(m.createdAt)}
+                        </div>
+                      )}
                     </div>
                     <PersonaAvatar
                       name={user?.nickname || user?.username || '我'}
@@ -1118,23 +1177,43 @@ export default function GroupChatPage() {
                   <PersonaAvatar name={name} avatarUrl={member?.avatar_url} size={38} />
                   <div className="gc-ai-block">
                     <div className="gc-sender-name">{name}</div>
-                    {m.toolRuns && m.toolRuns.length > 0 && (
-                      <div className="gc-tool-chips">
-                        {dedupToolRuns(m.toolRuns).map((tr, idx) => {
-                          const meta = resolveToolMeta(tr.tool)
-                          return (
-                            <span
-                              key={idx}
-                              className={`gc-tool-chip ${tr.running ? 'gc-tool-chip--run' : ''}`}
-                            >
-                              {meta.icon} {meta.label}
-                              {tr.count > 1 && ` ×${tr.count}`}
-                              {tr.running && ' …'}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    )}
+                    {m.toolRuns && m.toolRuns.length > 0 && (() => {
+                      const runs = dedupToolRuns(m.toolRuns)
+                      const totalCalls = runs.reduce((s, r) => s + r.count, 0)
+                      const running = runs.some((r) => r.running)
+                      const open = running || expandedTools.has(m.id)
+                      return (
+                        <div className="gc-tool-area">
+                          <span
+                            className="gc-tool-summary"
+                            onClick={() => !running && toggleTools(m.id)}
+                            style={{ cursor: running ? 'default' : 'pointer' }}
+                          >
+                            <ToolOutlined />{' '}
+                            {running ? '正在调用工具…' : `调用了 ${totalCalls} 次工具`}
+                            {!running && <span className="gc-tool-caret">{open ? ' ▾' : ' ▸'}</span>}
+                          </span>
+                          {open && (
+                            <div className="gc-tool-chips">
+                              {runs.map((tr, idx) => {
+                                const meta = resolveToolMeta(tr.tool)
+                                return (
+                                  <Tooltip key={idx} title={meta.label}>
+                                    <span
+                                      className={`gc-tool-chip ${tr.running ? 'gc-tool-chip--run' : ''}`}
+                                    >
+                                      {meta.icon} {meta.short}
+                                      {tr.count > 1 && ` ×${tr.count}`}
+                                      {tr.running && ' …'}
+                                    </span>
+                                  </Tooltip>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                     <div className="gc-bubble gc-bubble--ai">
                       {m.content ? (
                         <MarkdownMessage content={m.content} />
@@ -1146,6 +1225,39 @@ export default function GroupChatPage() {
                         </span>
                       )}
                     </div>
+                    {m.createdAt && !m.streaming && (
+                      <div className="gc-ai-actions">
+                        {m.content && (
+                          <>
+                            <Button
+                              size="small"
+                              type="text"
+                              icon={<CopyOutlined />}
+                              onClick={() => onCopyMsg(m.content)}
+                              style={{ color: '#667085', fontSize: 12 }}
+                            >
+                              复制
+                            </Button>
+                            <Button
+                              size="small"
+                              type="text"
+                              icon={
+                                favIds[m.id] ? (
+                                  <StarFilled style={{ color: '#FAAD14' }} />
+                                ) : (
+                                  <StarOutlined />
+                                )
+                              }
+                              onClick={() => onFavMsg(m)}
+                              style={{ color: favIds[m.id] ? '#FAAD14' : '#667085', fontSize: 12 }}
+                            >
+                              {favIds[m.id] ? '已收藏' : '收藏'}
+                            </Button>
+                          </>
+                        )}
+                        <span className="gc-msg-time">{formatMsgTime(m.createdAt)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )
