@@ -24,7 +24,7 @@ const REL_LABEL: Record<string, string> = {
   RELATION: '关系',
   INVOLVES: '涉及',
 }
-const DEFAULT_KINDS: Kind[] = ['Entity', 'Event', 'Statement', 'Chunk', 'Dialogue']
+const DEFAULT_KINDS: Kind[] = ['Entity']
 
 interface EchartsParam {
   dataType?: string
