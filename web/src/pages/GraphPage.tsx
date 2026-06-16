@@ -7,8 +7,9 @@ import { memoryApi, type GraphData, type GraphNode } from '@/api/memories'
 const { Text, Paragraph } = Typography
 
 // 节点大类：颜色 + 形状 + 中文名。实体/事件默认显示，溯源层（陈述/片段/对话）默认隐藏，
-// 点图例对应的圆点即可点亮查看「这条记忆从哪来」。
+// 点下方圆点筛选按钮即可点亮查看「这条记忆从哪来」。
 const KIND_ORDER = ['Entity', 'Event', 'Statement', 'Chunk', 'Dialogue'] as const
+type Kind = (typeof KIND_ORDER)[number]
 const KIND_META: Record<string, { label: string; color: string; symbol: string }> = {
   Entity: { label: '实体', color: '#155EEF', symbol: 'circle' },
   Event: { label: '事件', color: '#FF8A34', symbol: 'diamond' },
@@ -16,7 +17,6 @@ const KIND_META: Record<string, { label: string; color: string; symbol: string }
   Chunk: { label: '片段', color: '#9254DE', symbol: 'rect' },
   Dialogue: { label: '对话', color: '#13A8A8', symbol: 'triangle' },
 }
-// 边类型可读名（tooltip 用）
 const REL_LABEL: Record<string, string> = {
   HAS_CHUNK: '包含片段',
   HAS_STATEMENT: '包含陈述',
@@ -24,6 +24,7 @@ const REL_LABEL: Record<string, string> = {
   RELATION: '关系',
   INVOLVES: '涉及',
 }
+const DEFAULT_KINDS: Kind[] = ['Entity', 'Event']
 
 interface EchartsParam {
   dataType?: string
@@ -35,6 +36,8 @@ export default function GraphPage() {
   const [data, setData] = useState<GraphData | null>(null)
   const [selected, setSelected] = useState<GraphNode | null>(null)
   const [merging, setMerging] = useState(false)
+  // 当前显示的节点大类（默认只显示实体 + 事件，避免溯源层一次性全画导致卡顿）
+  const [visibleKinds, setVisibleKinds] = useState<Set<string>>(() => new Set(DEFAULT_KINDS))
 
   const load = (showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -64,10 +67,44 @@ export default function GraphPage() {
     }
   }
 
-  const option = useMemo(() => {
-    if (!data || data.nodes.length === 0) return null
+  const kindOf = (n: GraphNode): Kind =>
+    n.kind && KIND_META[n.kind] ? (n.kind as Kind) : 'Entity'
 
-    // 连接度
+  // 出现过的节点大类（用于筛选按钮 + 各类计数）
+  const presentKinds = useMemo<Kind[]>(() => {
+    if (!data) return []
+    const counts = new Map<Kind, number>()
+    data.nodes.forEach((n) => {
+      const k = kindOf(n)
+      counts.set(k, (counts.get(k) ?? 0) + 1)
+    })
+    return KIND_ORDER.filter((k) => counts.has(k))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
+
+  const kindCount = useMemo(() => {
+    const m = new Map<Kind, number>()
+    data?.nodes.forEach((n) => {
+      const k = kindOf(n)
+      m.set(k, (m.get(k) ?? 0) + 1)
+    })
+    return m
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
+
+  const toggleKind = (k: Kind) =>
+    setVisibleKinds((prev) => {
+      const next = new Set(prev)
+      if (next.has(k)) next.delete(k)
+      else next.add(k)
+      return next
+    })
+
+  // 只把「可见大类」的节点和两端都可见的边喂给 ECharts（force 只算可见节点，流畅且必显示）
+  const { option, visibleNodes } = useMemo(() => {
+    if (!data || data.nodes.length === 0) return { option: null, visibleNodes: [] as GraphNode[] }
+
+    // 全量连接度（节点大小用，反映真实重要度）
     const degree = new Map<string, number>()
     data.nodes.forEach((n) => degree.set(n.id, 0))
     data.edges.forEach((e) => {
@@ -76,25 +113,20 @@ export default function GraphPage() {
     })
     const maxDeg = Math.max(1, ...Array.from(degree.values()))
 
-    // 分类 = 节点大类（只保留出现过的，固定顺序）
-    const kindOf = (n: GraphNode) => (n.kind && KIND_META[n.kind] ? n.kind : 'Entity')
-    const presentKinds = KIND_ORDER.filter((k) => data.nodes.some((n) => kindOf(n) === k))
-    const catIndex = new Map<string, number>()
-    presentKinds.forEach((k, i) => catIndex.set(k, i))
-    const categories = presentKinds.map((k) => ({
+    const vis = data.nodes.filter((n) => visibleKinds.has(kindOf(n)))
+    const visIds = new Set(vis.map((n) => n.id))
+    const idToIdx = new Map<string, number>()
+    vis.forEach((n, i) => idToIdx.set(n.id, i))
+
+    // 分类（颜色），按固定顺序取所有出现的大类
+    const cats = presentKinds.map((k) => ({
       name: KIND_META[k].label,
       itemStyle: { color: KIND_META[k].color },
     }))
-    // 默认只显示实体 + 事件，溯源层默认隐藏
-    const legendSelected: Record<string, boolean> = {}
-    presentKinds.forEach((k) => {
-      legendSelected[KIND_META[k].label] = k === 'Entity' || k === 'Event'
-    })
+    const catIndex = new Map<Kind, number>()
+    presentKinds.forEach((k, i) => catIndex.set(k, i))
 
-    const idToIdx = new Map<string, number>()
-    data.nodes.forEach((n, i) => idToIdx.set(n.id, i))
-
-    const nodes = data.nodes.map((n) => {
+    const nodes = vis.map((n) => {
       const kind = kindOf(n)
       const deg = degree.get(n.id) ?? 0
       const imp = typeof n.importance === 'number' ? n.importance : 0.5
@@ -110,41 +142,36 @@ export default function GraphPage() {
         symbolSize: size,
         category: catIndex.get(kind),
         value: deg,
-        // 溯源层默认不显示标签（点亮后靠 hideOverlap 控制密度）
-        label: { show: kind === 'Entity' || kind === 'Event' },
       }
     })
 
-    const links = data.edges
-      .map((e) => {
-        const s = idToIdx.get(e.source)
-        const t = idToIdx.get(e.target)
-        if (s === undefined || t === undefined) return null
-        // 溯源边淡虚线，语义关系边实线
-        const isRelation = e.rel === 'RELATION'
-        return {
-          source: s,
-          target: t,
-          lineStyle: isRelation
-            ? { color: '#C9CDD4', width: 1.2, opacity: 0.7 }
-            : { color: '#E5E6EB', width: 1, type: 'dashed', opacity: 0.6 },
-        }
-      })
-      .filter((l): l is NonNullable<typeof l> => l !== null)
+    const visibleEdges = data.edges.filter(
+      (e) => visIds.has(e.source) && visIds.has(e.target),
+    )
+    const links = visibleEdges.map((e) => {
+      const isRelation = e.rel === 'RELATION'
+      return {
+        source: idToIdx.get(e.source)!,
+        target: idToIdx.get(e.target)!,
+        lineStyle: isRelation
+          ? { color: '#C9CDD4', width: 1.2, opacity: 0.75 }
+          : { color: '#E5E6EB', width: 1, type: 'dashed', opacity: 0.6 },
+      }
+    })
 
-    const repulsion = data.nodes.length > 60 ? 380 : data.nodes.length > 30 ? 280 : 200
+    const repulsion = vis.length > 80 ? 320 : vis.length > 40 ? 240 : 180
 
-    return {
+    const opt = {
       tooltip: {
         confine: true,
         formatter: (p: EchartsParam) => {
           if (p.dataType === 'edge' && p.dataIndex !== undefined) {
-            const e = data.edges[p.dataIndex]
+            const e = visibleEdges[p.dataIndex]
             if (!e) return ''
             return e.predicate_surface || e.predicate || REL_LABEL[e.rel ?? ''] || ''
           }
           if (p.dataType === 'node' && p.dataIndex !== undefined) {
-            const n = data.nodes[p.dataIndex]
+            const n = vis[p.dataIndex]
             if (!n) return ''
             const kindLabel = KIND_META[n.kind ?? 'Entity']?.label ?? '实体'
             const facts = (n.core_facts ?? [])
@@ -158,24 +185,13 @@ export default function GraphPage() {
           return ''
         },
       },
-      legend: [
-        {
-          data: categories.map((c) => c.name),
-          selected: legendSelected,
-          type: 'scroll',
-          bottom: 0,
-          left: 'center',
-          icon: 'circle',
-          textStyle: { color: '#667085' },
-        },
-      ],
       series: [
         {
           type: 'graph',
           layout: 'force',
           roam: true,
           draggable: true,
-          categories,
+          categories: cats,
           data: nodes,
           links,
           edgeSymbol: ['none', 'arrow'],
@@ -186,12 +202,7 @@ export default function GraphPage() {
             gravity: 0.05,
             friction: 0.6,
           },
-          label: {
-            show: true,
-            position: 'right',
-            fontSize: 11,
-            color: '#1D2129',
-          },
+          label: { show: true, position: 'right', fontSize: 11, color: '#1D2129' },
           labelLayout: { hideOverlap: true },
           emphasis: {
             focus: 'adjacency',
@@ -201,13 +212,13 @@ export default function GraphPage() {
         },
       ],
     }
-  }, [data])
+    return { option: opt, visibleNodes: vis }
+  }, [data, visibleKinds, presentKinds])
 
   const onEvents = {
     click: (p: EchartsParam) => {
-      if (p.dataType === 'node' && p.dataIndex !== undefined && data) {
-        const n = data.nodes[p.dataIndex]
-        // 只有实体有完整画像详情；溯源类节点点了不弹面板
+      if (p.dataType === 'node' && p.dataIndex !== undefined) {
+        const n = visibleNodes[p.dataIndex]
         if (n && (n.kind === 'Entity' || !n.kind)) setSelected(n)
       }
     },
@@ -243,12 +254,63 @@ export default function GraphPage() {
             <>
               {option && (
                 <ReactECharts
+                  key={Array.from(visibleKinds).sort().join(',')}
                   option={option}
                   notMerge
                   style={{ width: '100%', height: '100%' }}
                   onEvents={onEvents}
                 />
               )}
+
+              {/* 类型筛选圆点：点击显隐对应大类 */}
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 14,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  background: 'rgba(255,255,255,0.92)',
+                  borderRadius: 20,
+                  padding: '6px 12px',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.08)',
+                }}
+              >
+                {presentKinds.map((k) => {
+                  const on = visibleKinds.has(k)
+                  const meta = KIND_META[k]
+                  return (
+                    <span
+                      key={k}
+                      onClick={() => toggleKind(k)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        fontSize: 12,
+                        cursor: 'pointer',
+                        color: on ? '#1D2129' : '#BFBFBF',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: '50%',
+                          background: on ? meta.color : '#D9D9D9',
+                          display: 'inline-block',
+                        }}
+                      />
+                      {meta.label}
+                      <span style={{ color: '#98A2B3' }}>{kindCount.get(k) ?? 0}</span>
+                    </span>
+                  )
+                })}
+              </div>
+
               {selected && (
                 <div
                   style={{
@@ -313,6 +375,7 @@ export default function GraphPage() {
                   </Button>
                 </div>
               )}
+
               <div
                 style={{
                   position: 'absolute',
@@ -327,11 +390,10 @@ export default function GraphPage() {
                   maxWidth: '60%',
                 }}
               >
-                {data.nodes.length} 个节点 · {data.edges.length} 条关系
+                共 {data.nodes.length} 节点 · {data.edges.length} 关系，当前显示{' '}
+                {visibleNodes.length} 个
                 <br />
-                默认只显示实体/事件，点底部圆点可点亮溯源层（陈述/片段/对话）
-                <br />
-                大小=连接数 · 滚轮缩放、拖拽平移 · 点实体看详情
+                点下方圆点切换显示的类型 · 大小=连接数 · 滚轮缩放、拖拽 · 点实体看详情
               </div>
             </>
           )}
