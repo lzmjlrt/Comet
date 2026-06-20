@@ -13,6 +13,7 @@ import ChatPage from './pages/ChatPage'
 import GroupChatPage from './pages/GroupChatPage'
 import ResearchPage from './pages/ResearchPage'
 import AgentTaskPage from './pages/AgentTaskPage'
+import NotifyChannelPage from './pages/NotifyChannelPage'
 import AgentConfigPage from './pages/AgentConfigPage'
 import SkillPage from './pages/SkillPage'
 import ToolConfigPage from './pages/ToolConfigPage'
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="settings/agent" element={<AgentConfigPage />} />
           <Route path="settings/skills" element={<SkillPage />} />
           <Route path="settings/tools" element={<ToolConfigPage />} />
+          <Route path="settings/notify" element={<NotifyChannelPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

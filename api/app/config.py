@@ -147,6 +147,8 @@ class Settings(BaseSettings):
 
     # 定时任务执行（单次研究的整体硬超时，防卡死任务长期占住 worker；跨平台用 asyncio.wait_for）
     research_task_timeout: int = 900  # 单次定时研究整体超时（秒）
+    # 定时任务完成后推送通知用的站点地址（拼报告链接）
+    notify_site_url: str = "https://cometxrzs.top"
 
     @property
     def database_url(self) -> str:

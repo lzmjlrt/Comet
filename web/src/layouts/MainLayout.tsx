@@ -1,6 +1,7 @@
 import { Avatar, Badge, Button, Drawer, Dropdown, Input, Layout, Menu, Space, message } from 'antd'
 import {
   AppstoreOutlined,
+  BellOutlined,
   BookOutlined,
   CommentOutlined,
   CustomerServiceOutlined,
@@ -78,6 +79,7 @@ const menuItems = [
       { key: '/settings/agent', icon: <RobotOutlined />, label: '角色配置' },
       { key: '/settings/skills', icon: <ThunderboltOutlined />, label: '技能' },
       { key: '/settings/tools', icon: <ToolOutlined />, label: '工具配置' },
+      { key: '/settings/notify', icon: <BellOutlined />, label: '消息推送' },
     ],
   },
 ]

@@ -114,6 +114,7 @@ async def _do_run(tid: uuid.UUID) -> None:
                 return
             user_id = task.user_id
             instruction = task.instruction
+            notify_enabled = task.notify_enabled
             kb_ids = [str(k) for k in (task.kb_ids or [])] or None
             report = await ResearchReportRepository(session).create(
                 ResearchReport(
@@ -138,6 +139,10 @@ async def _do_run(tid: uuid.UUID) -> None:
                 task.last_status = TASK_RUN_DONE if ok else TASK_RUN_FAILED
                 await AgentTaskRepository(session).save(task)
         logger.info("定时任务执行完成: id=%s ok=%s", tid, ok)
+
+        # 4) 成功且任务开启推送 → 把报告 TL;DR 推到用户的消息渠道（失败降级不影响任务）
+        if ok and notify_enabled:
+            await _notify_user(sm, user_id, report_id, instruction)
     finally:
         await engine_db.dispose()
 
@@ -226,3 +231,60 @@ def run_agent_task_task(task_id: str) -> str:
     """执行一次定时研究任务的 Celery 入口。"""
     asyncio.run(_run_task(task_id))
     return task_id
+
+
+# ── 完成后推送通知 ──
+
+def _extract_summary(md: str, limit: int = 360) -> str:
+    """从报告 Markdown 提取简报：TL;DR 引用块 + 核心要点前几条，截断。"""
+    if not md:
+        return ""
+    lines = md.splitlines()
+    tldr: list[str] = []
+    points: list[str] = []
+    in_points = False
+    for line in lines:
+        s = line.strip()
+        if s.startswith(">"):
+            tldr.append(s.lstrip("> ").strip())
+        elif s.startswith("##") and ("核心要点" in s or "要点" in s):
+            in_points = True
+        elif s.startswith("##"):
+            in_points = False
+        elif in_points and (s.startswith("- ") or s.startswith("* ")):
+            points.append(s[2:].strip())
+    parts: list[str] = []
+    if tldr:
+        parts.append(" ".join(tldr))
+    if points:
+        parts.append("\n".join(f"· {p}" for p in points[:5]))
+    text = "\n\n".join(parts).strip()
+    if not text:
+        # 兜底：取正文前若干字（去标题/角标）
+        text = " ".join(s for s in (ln.strip() for ln in lines) if s and not s.startswith("#"))
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
+async def _notify_user(
+    sm: async_sessionmaker, user_id: uuid.UUID, report_id: uuid.UUID, topic: str
+) -> None:
+    """把完成的报告 TL;DR 推到用户的消息渠道。整步降级，绝不影响任务。"""
+    try:
+        from app.config import settings
+        from app.services.notify_service import NotifyService
+
+        async with sm() as session:
+            report = await ResearchReportRepository(session).get_by_id(report_id)
+            if not report or not report.report_md:
+                return
+            title = report.title or topic[:40] or "研究报告"
+            summary = _extract_summary(report.report_md)
+            link = f"{settings.notify_site_url.rstrip('/')}/research?report={report_id}"
+            content = f"{summary}\n\n📄 查看完整报告：{link}"
+            sent = await NotifyService(session).push_to_user(
+                user_id, f"🔬 {title}", content
+            )
+            if sent:
+                logger.info("定时任务推送完成: report=%s 渠道数=%d", report_id, sent)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("定时任务推送失败（忽略）: report=%s err=%s", report_id, e)
