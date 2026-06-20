@@ -45,6 +45,16 @@ export interface SearchHit {
   score: number
 }
 
+export interface DocumentPreview {
+  id: string
+  file_name: string
+  file_ext: string
+  is_markdown: boolean
+  source_url: string | null
+  content: string
+  truncated: boolean
+}
+
 export const documentApi = {
   list(page = 1, pageSize = 100, tag?: string, kbId?: string) {
     const q = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
@@ -71,6 +81,9 @@ export const documentApi = {
   },
   detail(id: string) {
     return client.get<unknown, Wrapped<DocumentItem>>(`/documents/${id}`)
+  },
+  preview(id: string) {
+    return client.get<unknown, Wrapped<DocumentPreview>>(`/documents/${id}/preview`)
   },
   status(id: string) {
     return client.get<unknown, Wrapped<{ status: DocStatus; progress: number; error_msg: string | null }>>(

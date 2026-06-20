@@ -20,15 +20,17 @@ import {
 import {
   ArrowLeftOutlined,
   ExclamationCircleFilled,
+  EyeOutlined,
   InboxOutlined,
   LinkOutlined,
   LoadingOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
-import { documentApi, type DocumentItem, type SearchHit } from '@/api/documents'
+import { documentApi, type DocumentItem, type DocumentPreview, type SearchHit } from '@/api/documents'
 import { imageApi, type ImageItem } from '@/api/images'
 import { knowledgeBaseApi, type KnowledgeBase } from '@/api/knowledgeBases'
 import { AuthenticatedImage } from '@/components/AuthenticatedImage'
+import MarkdownMessage from '@/components/MarkdownMessage'
 import { FileTypeIcon, StatusTag, formatSize } from './knowledge/helpers'
 
 const { Dragger } = Upload
@@ -97,6 +99,30 @@ function DocTab({ kbId }: { kbId: string }) {
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [uploading, setUploading] = useState(false)
   const pollRef = useRef<number | null>(null)
+  const [preview, setPreview] = useState<DocumentPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  const openPreview = async (d: DocumentItem) => {
+    setPreviewLoading(true)
+    setPreview({
+      id: d.id,
+      file_name: d.file_name,
+      file_ext: d.file_ext,
+      is_markdown: false,
+      source_url: d.source_url,
+      content: '',
+      truncated: false,
+    })
+    try {
+      const { data } = await documentApi.preview(d.id)
+      setPreview(data)
+    } catch (e) {
+      message.error((e as Error).message)
+      setPreview(null)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -208,7 +234,12 @@ function DocTab({ kbId }: { kbId: string }) {
       <div className="kb-row-icon">
         <FileTypeIcon ext={d.file_ext} isUrl={d.source_type === 'url'} />
       </div>
-      <div className="kb-row-main">
+      <div
+        className="kb-row-main"
+        onClick={() => openPreview(d)}
+        style={{ cursor: 'pointer' }}
+        title="点击查看内容"
+      >
         <div className="kb-row-title-line">
           <span className="kb-row-title" title={d.file_name}>
             {d.file_name}
@@ -234,6 +265,14 @@ function DocTab({ kbId }: { kbId: string }) {
         </div>
       </div>
       <div className="kb-row-actions">
+        <Tooltip title="查看内容">
+          <Button
+            size="small"
+            type="text"
+            icon={<EyeOutlined />}
+            onClick={() => openPreview(d)}
+          />
+        </Tooltip>
         {d.status === 'failed' && (
           <Tooltip title="重新解析">
             <Button
@@ -345,6 +384,83 @@ function DocTab({ kbId }: { kbId: string }) {
           onChange={(e) => setUrl(e.target.value)}
           onPressEnter={onImportUrl}
         />
+      </Modal>
+
+      <Modal
+        title={
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <EyeOutlined />
+            <span
+              style={{
+                maxWidth: 520,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {preview?.file_name || '文档内容'}
+            </span>
+          </span>
+        }
+        open={preview !== null}
+        onCancel={() => setPreview(null)}
+        width={860}
+        footer={[
+          preview?.source_url ? (
+            <Button
+              key="src"
+              href={preview.source_url}
+              target="_blank"
+              rel="noreferrer"
+              icon={<LinkOutlined />}
+            >
+              查看原网页
+            </Button>
+          ) : null,
+          <Button key="close" type="primary" onClick={() => setPreview(null)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        <Spin spinning={previewLoading}>
+          <div
+            style={{
+              maxHeight: '64vh',
+              overflowY: 'auto',
+              padding: '4px 4px 0',
+              minHeight: 120,
+            }}
+          >
+            {preview && !previewLoading && !preview.content && (
+              <Empty description="该文档没有可显示的文本内容" />
+            )}
+            {preview?.content &&
+              (preview.is_markdown ? (
+                <MarkdownMessage content={preview.content} />
+              ) : (
+                <pre
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontFamily: 'inherit',
+                    fontSize: 14,
+                    lineHeight: 1.8,
+                    margin: 0,
+                  }}
+                >
+                  {preview.content}
+                </pre>
+              ))}
+            {preview?.truncated && (
+              <Typography.Text
+                type="secondary"
+                style={{ display: 'block', marginTop: 12, fontSize: 12 }}
+              >
+                内容较长，仅显示前一部分。完整内容请下载原文件查看。
+              </Typography.Text>
+            )}
+          </div>
+        </Spin>
       </Modal>
     </div>
   )

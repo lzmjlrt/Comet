@@ -67,6 +67,17 @@ async def get_document(
     return success(await service.to_out_dict(doc))
 
 
+@router.get("/{doc_id}/preview")
+async def preview_document(
+    doc_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """读取文档原文内容供查看（md 渲染 / 其余纯文本，超长截断）。"""
+    data = await DocumentService(session).preview(user.id, doc_id)
+    return success(data)
+
+
 @router.get("/{doc_id}/status")
 async def get_status(
     doc_id: uuid.UUID,

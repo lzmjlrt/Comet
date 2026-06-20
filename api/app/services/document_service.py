@@ -24,6 +24,8 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 
 class DocumentService:
+    PREVIEW_MAX_CHARS = 80000  # 文档预览最大返回字符数（超出截断）
+
     def __init__(self, session: AsyncSession):
         self.session = session
         self.repo = DocumentRepository(session)
@@ -183,6 +185,46 @@ class DocumentService:
         except Exception as e:
             logger.warning("移动文档回写 ES kb_id 失败（忽略）: %s", e)
         return doc
+
+    async def preview(self, user_id: uuid.UUID, doc_id: uuid.UUID) -> dict:
+        """读取文档原文内容供查看：md/txt 保留原文，pdf/docx/html 提取纯文本。
+
+        从对象存储取原始文件按类型解析，超长截断（带 truncated 标记）。
+        """
+        from app.core.rag.parser import decode_text, parse_document
+
+        doc = await self._get_or_404(user_id, doc_id)
+        try:
+            raw = await get_storage().get(doc.file_key)
+        except Exception as e:
+            logger.warning("读取文档原文失败: id=%s err=%s", doc_id, e)
+            raise BizError("原始文件读取失败，可能已被清理", code=3033) from e
+
+        ext = (doc.file_ext or "").lower()
+        is_markdown = ext in (".md", ".markdown")
+        try:
+            if is_markdown or ext == ".txt":
+                # 保留原始文本（markdown 交前端渲染，纯文本原样展示）
+                text = decode_text(raw)
+            else:
+                text = parse_document(ext, raw)
+        except Exception as e:
+            logger.warning("文档预览解析失败: id=%s err=%s", doc_id, e)
+            raise BizError(f"内容解析失败：{e}", code=3034) from e
+
+        text = (text or "").strip()
+        truncated = len(text) > self.PREVIEW_MAX_CHARS
+        if truncated:
+            text = text[: self.PREVIEW_MAX_CHARS]
+        return {
+            "id": str(doc.id),
+            "file_name": doc.file_name,
+            "file_ext": ext,
+            "is_markdown": is_markdown,
+            "source_url": doc.source_url,
+            "content": text,
+            "truncated": truncated,
+        }
 
     async def to_out_dict(self, doc: Document) -> dict:
         tags = await self.tag_repo.get_document_tags(doc.id)
