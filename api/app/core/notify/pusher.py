@@ -38,7 +38,11 @@ def _serverchan_url(target: str) -> str:
 
 
 async def push(channel_type: str, target: str, title: str, content: str) -> tuple[bool, str]:
-    """按渠道推送一条消息。返回 (是否成功, 失败原因)。"""
+    """按渠道推送一条消息。返回 (是否成功, 失败原因)。
+
+    注意：这些服务即使业务失败也常返回 HTTP 200，真正的结果在响应体里
+    （Server酱 看 code、企业微信/钉钉看 errcode），故需校验响应体而非仅看状态码。
+    """
     target = (target or "").strip()
     if not target:
         return False, "渠道未配置"
@@ -50,7 +54,6 @@ async def push(channel_type: str, target: str, title: str, content: str) -> tupl
                     data={"title": title[:100], "desp": content},
                 )
             elif channel_type == CHANNEL_WECOM:
-                # 企业微信群机器人：markdown 消息
                 resp = await client.post(
                     target,
                     json={
@@ -59,7 +62,6 @@ async def push(channel_type: str, target: str, title: str, content: str) -> tupl
                     },
                 )
             elif channel_type == CHANNEL_DINGTALK:
-                # 钉钉群机器人：markdown 消息
                 resp = await client.post(
                     target,
                     json={
@@ -68,12 +70,11 @@ async def push(channel_type: str, target: str, title: str, content: str) -> tupl
                     },
                 )
             elif channel_type == CHANNEL_WEBHOOK:
-                # 通用 webhook：POST 结构化 JSON，由用户侧自行解析
                 resp = await client.post(target, json={"title": title, "content": content})
             else:
                 return False, f"未知渠道类型：{channel_type}"
         resp.raise_for_status()
-        return True, ""
+        return _check_body(channel_type, resp)
     except httpx.HTTPStatusError as e:
         msg = f"HTTP {e.response.status_code}"
         logger.warning("推送失败: type=%s err=%s", channel_type, msg)
@@ -81,3 +82,27 @@ async def push(channel_type: str, target: str, title: str, content: str) -> tupl
     except Exception as e:  # noqa: BLE001
         logger.warning("推送失败: type=%s err=%s", channel_type, e)
         return False, str(e)
+
+
+def _check_body(channel_type: str, resp: httpx.Response) -> tuple[bool, str]:
+    """校验响应体业务结果（HTTP 200 不代表投递成功）。"""
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001
+        # 非 JSON（如通用 webhook 返回纯文本）：HTTP 2xx 即认为成功
+        return True, ""
+    if not isinstance(body, dict):
+        return True, ""
+    if channel_type == CHANNEL_SERVERCHAN:
+        # Server酱：{"code":0,...} 为成功；非 0 取 message
+        code = body.get("code", body.get("data", {}).get("code") if isinstance(body.get("data"), dict) else 0)
+        if code in (0, None):
+            return True, ""
+        return False, str(body.get("message") or body.get("info") or f"code={code}")
+    if channel_type in (CHANNEL_WECOM, CHANNEL_DINGTALK):
+        # 企业微信/钉钉：errcode 0 为成功
+        errcode = body.get("errcode", 0)
+        if errcode == 0:
+            return True, ""
+        return False, str(body.get("errmsg") or f"errcode={errcode}")
+    return True, ""
