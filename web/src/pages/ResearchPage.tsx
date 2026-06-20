@@ -4,8 +4,10 @@ import {
   Button,
   Card,
   Drawer,
+  Dropdown,
   Empty,
   Input,
+  Modal,
   Space,
   Spin,
   Tag,
@@ -18,9 +20,13 @@ import {
   DownloadOutlined,
   DownOutlined,
   FileSearchOutlined,
+  FileWordOutlined,
   GlobalOutlined,
+  HighlightOutlined,
   PlusOutlined,
+  PrinterOutlined,
   SaveOutlined,
+  ShareAltOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import MarkdownMessage from '@/components/MarkdownMessage'
@@ -41,7 +47,6 @@ const { TextArea } = Input
 const EXAMPLES = [
   '调研 AI Agent / 大模型开发岗秋招：在招公司、岗位要求与投递链接',
   '梳理大模型应用开发岗面试高频考点与准备路径',
-  '盘点 2025 国内大模型 Agent 创业公司与融资情况',
   '对比主流向量数据库的选型要点与适用场景',
 ]
 
@@ -51,6 +56,9 @@ const PHASE_LABEL: Record<string, string> = {
   planning: '规划中',
   searching: '检索中',
   searching_done: '检索中',
+  distilling: '提炼中',
+  reflecting: '反思补搜',
+  curating: '整理大纲',
   writing: '撰写中',
   summarizing: '汇总中',
 }
@@ -67,6 +75,7 @@ const STEP_ICON: Record<string, string> = {
   fetch: '📄',
   kb: '📚',
   mcp: '🔧',
+  distill: '✨',
   stage: '🧭',
   write: '✍️',
 }
@@ -77,7 +86,13 @@ export default function ResearchPage() {
   const [topic, setTopic] = useState('')
   const [running, setRunning] = useState(false)
   const [currentId, setCurrentId] = useState<string | null>(null)
+  const [polishing, setPolishing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shareUrl, setShareUrl] = useState('')
+  const [shareId, setShareId] = useState('')
+  const [sharing, setSharing] = useState(false)
 
   // 流式状态
   const [phase, setPhase] = useState('')
@@ -111,6 +126,13 @@ export default function ResearchPage() {
     loadReports()
     return () => abortRef.current?.abort()
   }, [loadReports])
+
+  // 深链：?report=<id> 自动打开某份报告（来自任务运行历史/首页简报跳转）
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('report')
+    if (id) openReport(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const stepsRef = useRef<HTMLDivElement>(null)
 
@@ -151,7 +173,11 @@ export default function ResearchPage() {
       setPhase(d.phase)
       setStatusDetail(d.detail)
       // 阶段切换也作为一条活动记录，让流程更连贯
-      if (d.phase === 'writing' || d.phase === 'summarizing' || d.phase === 'planning') {
+      if (
+        ['writing', 'summarizing', 'planning', 'distilling', 'reflecting', 'curating'].includes(
+          d.phase,
+        )
+      ) {
         setSteps((s) => [...s, { icon: 'stage', ok: true, text: d.detail }])
       }
     },
@@ -185,6 +211,25 @@ export default function ResearchPage() {
       setRunning(false)
     },
   })
+
+  const polishTopic = async () => {
+    const raw = topic.trim()
+    if (!raw) {
+      message.warning('请先输入研究主题再润色')
+      return
+    }
+    if (polishing || running) return
+    setPolishing(true)
+    try {
+      const res = await researchApi.optimizeTopic(raw)
+      setTopic(res.data.optimized)
+      message.success('已润色')
+    } catch (err) {
+      message.error((err as { message?: string })?.message || '润色失败')
+    } finally {
+      setPolishing(false)
+    }
+  }
 
   const startResearch = async () => {
     const t = topic.trim()
@@ -291,6 +336,81 @@ export default function ResearchPage() {
       message.error(m || '存入失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const exportDocx = async () => {
+    if (!currentId || exporting) return
+    setExporting(true)
+    try {
+      const blob = await researchApi.exportDocx(currentId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${reportTitle || '研究报告'}.docx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      message.error((err as { message?: string })?.message || '导出失败')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const printReport = () => {
+    // 把已渲染的报告正文克隆到 body 顶层再打印：脱离页面的滚动/定高容器，
+    // 内容才能正常跨多页分页（直接 window.print 会被 overflow 容器裁成一页）。
+    const src = document.querySelector('.research-print')
+    if (!src) {
+      window.print()
+      return
+    }
+    const holder = document.createElement('div')
+    holder.id = 'print-root'
+    holder.innerHTML = src.innerHTML
+    document.body.appendChild(holder)
+    document.body.classList.add('printing')
+    const cleanup = () => {
+      document.body.classList.remove('printing')
+      holder.remove()
+      window.removeEventListener('afterprint', cleanup)
+    }
+    window.addEventListener('afterprint', cleanup)
+    window.print()
+  }
+
+  const openShare = async () => {
+    if (!currentId) return
+    setSharing(true)
+    try {
+      const { data } = await researchApi.share(currentId)
+      setShareUrl(`${window.location.origin}/r/${data.share_token}`)
+      setShareId(data.id)
+      setShareOpen(true)
+    } catch (err) {
+      message.error((err as { message?: string })?.message || '生成分享失败')
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  const copyShareUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      message.success('链接已复制')
+    } catch {
+      message.warning('复制失败，请手动复制')
+    }
+  }
+
+  const revokeShare = async () => {
+    if (!shareId) return
+    try {
+      await researchApi.revokeShare(shareId)
+      message.success('已取消分享')
+      setShareOpen(false)
+    } catch (err) {
+      message.error((err as { message?: string })?.message || '取消失败')
     }
   }
 
@@ -404,6 +524,18 @@ export default function ResearchPage() {
             </p>
 
             <div className="research-hero-input">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<HighlightOutlined />}
+                  loading={polishing}
+                  onClick={polishTopic}
+                  style={{ fontSize: 13 }}
+                >
+                  AI 润色
+                </Button>
+              </div>
               <TextArea
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
@@ -558,23 +690,58 @@ export default function ResearchPage() {
                 title={reportTitle || '研究报告'}
                 extra={
                   canManage && (
-                    <Space>
-                      <Tooltip title="下载 Markdown">
-                        <Button size="small" icon={<DownloadOutlined />} onClick={downloadMd} />
-                      </Tooltip>
-                      <Tooltip title="存入「深度研究报告」知识库">
-                        <Button
-                          size="small"
-                          icon={<SaveOutlined />}
-                          loading={saving}
-                          onClick={saveToKb}
-                        />
-                      </Tooltip>
+                    <Space size="small" wrap>
+                      <Dropdown
+                        menu={{
+                          items: [
+                            {
+                              key: 'md',
+                              icon: <DownloadOutlined />,
+                              label: '下载 Markdown',
+                              onClick: downloadMd,
+                            },
+                            {
+                              key: 'docx',
+                              icon: <FileWordOutlined />,
+                              label: exporting ? '导出中…' : '下载 Word',
+                              onClick: exportDocx,
+                            },
+                            {
+                              key: 'print',
+                              icon: <PrinterOutlined />,
+                              label: '打印 / 存为 PDF',
+                              onClick: printReport,
+                            },
+                          ],
+                        }}
+                      >
+                        <Button icon={<DownloadOutlined />}>
+                          下载 <DownOutlined />
+                        </Button>
+                      </Dropdown>
+                      <Button
+                        icon={<ShareAltOutlined />}
+                        loading={sharing}
+                        onClick={openShare}
+                      >
+                        分享
+                      </Button>
+                      <Button
+                        type="primary"
+                        icon={<SaveOutlined />}
+                        loading={saving}
+                        onClick={saveToKb}
+                      >
+                        存入知识库
+                      </Button>
                     </Space>
                   )
                 }
               >
-                <MarkdownMessage content={displayMd} />
+                <div className="research-print">
+                  <h1 className="research-print-title">{reportTitle || '研究报告'}</h1>
+                  <MarkdownMessage content={displayMd} />
+                </div>
                 {running && <span className="research-caret">▍</span>}
               </Card>
             )}
@@ -588,6 +755,28 @@ export default function ResearchPage() {
           </div>
         )}
       </div>
+
+      <Modal
+        title="分享研究报告"
+        open={shareOpen}
+        onCancel={() => setShareOpen(false)}
+        footer={[
+          <Button key="revoke" danger onClick={revokeShare}>
+            取消分享
+          </Button>,
+          <Button key="copy" type="primary" onClick={copyShareUrl}>
+            复制链接
+          </Button>,
+        ]}
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
+          公开只读链接，任何人无需登录即可查看这份报告快照（不含你的其他数据）。
+        </Typography.Paragraph>
+        <Input.TextArea value={shareUrl} readOnly autoSize style={{ marginBottom: 8 }} />
+        <Button type="link" href={shareUrl} target="_blank" rel="noreferrer" style={{ paddingLeft: 0 }}>
+          在新标签打开预览 →
+        </Button>
+      </Modal>
     </div>
   )
 }

@@ -11,3 +11,4 @@ class AgentTaskUpsertRequest(BaseModel):
     trigger_weekday: int | None = Field(None, ge=0, le=6)  # 0=周一..6=周日（weekly）
     trigger_interval_hours: int | None = Field(None, ge=1, le=720)  # interval
     enabled: bool = True
+    notify_enabled: bool = True  # 跑完是否推送到消息渠道

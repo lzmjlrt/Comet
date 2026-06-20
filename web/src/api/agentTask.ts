@@ -18,6 +18,7 @@ export interface AgentTask {
   trigger_weekday: number | null
   trigger_interval_hours: number | null
   enabled: boolean
+  notify_enabled: boolean
   last_run_at: string | null
   last_status: 'running' | 'done' | 'failed' | null
   next_run_at: string | null
@@ -33,6 +34,15 @@ export interface AgentTaskUpsert {
   trigger_weekday?: number | null
   trigger_interval_hours?: number | null
   enabled: boolean
+  notify_enabled?: boolean
+}
+
+export interface AgentTaskRun {
+  id: string
+  title: string
+  status: 'pending' | 'planning' | 'searching' | 'writing' | 'summarizing' | 'done' | 'failed'
+  error_msg: string | null
+  created_at: string | null
 }
 
 export const agentTaskApi = {
@@ -55,5 +65,14 @@ export const agentTaskApi = {
   },
   remove(id: string) {
     return client.delete<unknown, Wrapped<null>>(`/agent-tasks/${id}`)
+  },
+  runs(id: string) {
+    return client.get<unknown, Wrapped<AgentTaskRun[]>>(`/agent-tasks/${id}/runs`)
+  },
+  unreadCount() {
+    return client.get<unknown, Wrapped<{ count: number }>>('/agent-tasks/unread-count')
+  },
+  markSeen() {
+    return client.post<unknown, Wrapped<null>>('/agent-tasks/mark-seen')
   },
 }

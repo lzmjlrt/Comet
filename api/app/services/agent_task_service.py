@@ -83,6 +83,7 @@ class AgentTaskService:
             trigger_weekday=body.trigger_weekday,
             trigger_interval_hours=body.trigger_interval_hours,
             enabled=body.enabled,
+            notify_enabled=body.notify_enabled,
         )
         task.next_run_at = compute_next_run(task) if body.enabled else None
         created = await self.repo.create(task)
@@ -102,6 +103,7 @@ class AgentTaskService:
         task.trigger_weekday = body.trigger_weekday
         task.trigger_interval_hours = body.trigger_interval_hours
         task.enabled = body.enabled
+        task.notify_enabled = body.notify_enabled
         task.next_run_at = compute_next_run(task) if body.enabled else None
         return await self.repo.save(task)
 
@@ -127,6 +129,49 @@ class AgentTaskService:
     async def list_tasks(self, user_id: uuid.UUID) -> list[dict]:
         tasks = await self.repo.list_by_user(user_id)
         return [self.to_dict(t) for t in tasks]
+
+    async def list_runs(self, user_id: uuid.UUID, task_id: uuid.UUID) -> list[dict]:
+        """某任务的运行历史（复用 research_reports，task_id 关联）。"""
+        from app.repositories.research_report_repository import (
+            ResearchReportRepository,
+        )
+
+        await self._get_or_404(user_id, task_id)
+        reports = await ResearchReportRepository(self.session).list_by_task(
+            user_id, task_id
+        )
+        return [
+            {
+                "id": str(r.id),
+                "title": r.title or r.topic,
+                "status": r.status,
+                "error_msg": r.error_msg,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in reports
+        ]
+
+    async def unread_count(self, user_id: uuid.UUID) -> int:
+        """未读定时报告数（created_at 晚于用户上次查看简报的时间）。"""
+        from app.models.user_model import User
+        from app.repositories.research_report_repository import (
+            ResearchReportRepository,
+        )
+
+        user = await self.session.get(User, user_id)
+        since = user.briefing_seen_at if user else None
+        return await ResearchReportRepository(self.session).count_unread_scheduled(
+            user_id, since
+        )
+
+    async def mark_seen(self, user_id: uuid.UUID) -> None:
+        """把「上次查看简报时间」更新为现在，清未读红点。"""
+        from app.models.user_model import User
+
+        user = await self.session.get(User, user_id)
+        if user:
+            user.briefing_seen_at = datetime.now(TZ)
+            await self.session.commit()
 
     async def _get_or_404(
         self, user_id: uuid.UUID, task_id: uuid.UUID
@@ -157,6 +202,7 @@ class AgentTaskService:
             "trigger_weekday": t.trigger_weekday,
             "trigger_interval_hours": t.trigger_interval_hours,
             "enabled": t.enabled,
+            "notify_enabled": t.notify_enabled,
             "last_run_at": t.last_run_at.isoformat() if t.last_run_at else None,
             "last_status": t.last_status or None,
             "next_run_at": t.next_run_at.isoformat() if t.next_run_at else None,

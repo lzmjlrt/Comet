@@ -20,6 +20,11 @@ def _decode_text(content: bytes) -> str:
         return content.decode("utf-8", errors="ignore")
 
 
+def decode_text(content: bytes) -> str:
+    """对外暴露的文本解码：保留原始文本内容（不做 markdown→纯文本转换），用于预览。"""
+    return _decode_text(content)
+
+
 def _parse_pdf(content: bytes) -> str:
     import fitz  # pymupdf
 
