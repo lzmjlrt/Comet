@@ -51,7 +51,7 @@ export const TOOL_META: Record<string, { icon: string; label: string }> = {
 
 // 真人模式多气泡分隔符：模型在断句处单独输出 [[next]]，前端据此把一条回复拆成多个气泡。
 export const BUBBLE_SEP_RE = /\s*\[\[next\]\]\s*/
-const MAX_BUBBLES = 5
+const MAX_BUBBLES = 3
 
 // 按分隔符把内容拆成多个气泡文本：过滤空段；超过上限则把多余的并入最后一条。
 export function splitBubbles(content: string): string[] {
