@@ -5266,3 +5266,31 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* 研究报告：屏幕上隐藏打印专用标题（打印时才显示） */
+.research-print-title {
+  display: none;
+}
+
+/* 打印 / 存为 PDF：只保留报告正文，隐藏导航与其他界面 */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .research-print,
+  .research-print * {
+    visibility: visible;
+  }
+  .research-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0 8mm;
+  }
+  .research-print-title {
+    display: block;
+    font-size: 22px;
+    margin: 0 0 12px;
+  }
+}

@@ -20,6 +20,7 @@ import SearchPage from './pages/SearchPage'
 import FavoritesPage from './pages/FavoritesPage'
 import ProfilePage from './pages/ProfilePage'
 import SharePage from './pages/SharePage'
+import ReportSharePage from './pages/ReportSharePage'
 import JoinGroupPage from './pages/JoinGroupPage'
 import RequireAuth from './components/RequireAuth'
 
@@ -30,6 +31,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/s/:token" element={<SharePage />} />
+        <Route path="/r/:token" element={<ReportSharePage />} />
         <Route path="/groups/join/:code" element={<JoinGroupPage />} />
         <Route
           path="/"

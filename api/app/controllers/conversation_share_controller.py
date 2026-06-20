@@ -61,3 +61,15 @@ async def get_public_share(
     """公开查看分享内容（无需登录）。"""
     data = await ConversationShareService(session).get_public(token)
     return success(data)
+
+
+@public_router.get("/report-shares/{token}")
+async def get_public_report_share(
+    token: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """公开查看研究报告分享（无需登录）。"""
+    from app.services.report_share_service import ReportShareService
+
+    data = await ReportShareService(session).get_public(token)
+    return success(data)

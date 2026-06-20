@@ -2,18 +2,21 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
+from app.core.exceptions import BizError
 from app.core.response import success
 from app.db.postgres import get_session
 from app.models.user_model import User
+from app.schemas.report_share_schema import ReportShareCreateRequest
 from app.schemas.research_schema import (
     OptimizeTopicRequest,
     ResearchStartRequest,
     SaveToKbRequest,
 )
+from app.services.report_share_service import ReportShareService
 from app.services.research_service import ResearchService
 
 router = APIRouter(prefix="/research", tags=["research"])
@@ -34,6 +37,29 @@ async def optimize_topic(
     """一键润色研究指令（深度研究主题 + 定时任务研究指令共用）。"""
     optimized = await ResearchService(session).optimize_topic(user.id, body.topic)
     return success({"optimized": optimized})
+
+
+# ── 报告分享（静态路径，必须在 /{report_id} 之前注册避免 uuid 路由冲突）──
+
+
+@router.get("/shares")
+async def list_report_shares(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    service = ReportShareService(session)
+    items = await service.list_shares(user.id)
+    return success([service.share_out(s) for s in items])
+
+
+@router.delete("/shares/{share_id}")
+async def revoke_report_share(
+    share_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    await ReportShareService(session).revoke(user.id, share_id)
+    return success(message="已取消分享")
 
 
 @router.post("/stream")
@@ -105,3 +131,46 @@ async def save_report_to_kb(
 ):
     data = await ResearchService(session).save_to_kb(user.id, report_id, body.kb_id)
     return success(data, "已存入知识库，正在解析入库")
+
+
+@router.post("/{report_id}/share")
+async def share_report(
+    report_id: uuid.UUID,
+    body: ReportShareCreateRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """生成/刷新报告的公开只读分享链接。"""
+    service = ReportShareService(session)
+    share = await service.create_share(
+        user.id, report_id, body.expire_days, body.title
+    )
+    return success(service.share_out(share), "已生成分享链接")
+
+
+@router.get("/{report_id}/export/docx")
+async def export_report_docx(
+    report_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """导出报告为 Word(.docx) 文件。"""
+    from urllib.parse import quote
+
+    from app.core.export.md_to_docx import markdown_to_docx_bytes
+
+    detail = await ResearchService(session).get_detail(user.id, report_id)
+    if detail.get("status") != "done" or not detail.get("report_md"):
+        raise BizError("报告尚未完成，无法导出", code=3075)
+    title = detail.get("title") or detail.get("topic") or "研究报告"
+    data = markdown_to_docx_bytes(title, detail["report_md"])
+    filename = quote(f"{title}.docx")
+    return Response(
+        content=data,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+        },
+    )

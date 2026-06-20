@@ -4,8 +4,10 @@ import {
   Button,
   Card,
   Drawer,
+  Dropdown,
   Empty,
   Input,
+  Modal,
   Space,
   Spin,
   Tag,
@@ -18,10 +20,13 @@ import {
   DownloadOutlined,
   DownOutlined,
   FileSearchOutlined,
+  FileWordOutlined,
   GlobalOutlined,
   HighlightOutlined,
   PlusOutlined,
+  PrinterOutlined,
   SaveOutlined,
+  ShareAltOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import MarkdownMessage from '@/components/MarkdownMessage'
@@ -83,6 +88,11 @@ export default function ResearchPage() {
   const [currentId, setCurrentId] = useState<string | null>(null)
   const [polishing, setPolishing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shareUrl, setShareUrl] = useState('')
+  const [shareId, setShareId] = useState('')
+  const [sharing, setSharing] = useState(false)
 
   // 流式状态
   const [phase, setPhase] = useState('')
@@ -319,6 +329,63 @@ export default function ResearchPage() {
       message.error(m || '存入失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const exportDocx = async () => {
+    if (!currentId || exporting) return
+    setExporting(true)
+    try {
+      const blob = await researchApi.exportDocx(currentId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${reportTitle || '研究报告'}.docx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      message.error((err as { message?: string })?.message || '导出失败')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const printReport = () => {
+    window.print()
+  }
+
+  const openShare = async () => {
+    if (!currentId) return
+    setSharing(true)
+    try {
+      const { data } = await researchApi.share(currentId)
+      setShareUrl(`${window.location.origin}/r/${data.share_token}`)
+      setShareId(data.id)
+      setShareOpen(true)
+    } catch (err) {
+      message.error((err as { message?: string })?.message || '生成分享失败')
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  const copyShareUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      message.success('链接已复制')
+    } catch {
+      message.warning('复制失败，请手动复制')
+    }
+  }
+
+  const revokeShare = async () => {
+    if (!shareId) return
+    try {
+      await researchApi.revokeShare(shareId)
+      message.success('已取消分享')
+      setShareOpen(false)
+    } catch (err) {
+      message.error((err as { message?: string })?.message || '取消失败')
     }
   }
 
@@ -598,12 +665,41 @@ export default function ResearchPage() {
                 title={reportTitle || '研究报告'}
                 extra={
                   canManage && (
-                    <Space size="small">
-                      <Button
-                        icon={<DownloadOutlined />}
-                        onClick={downloadMd}
+                    <Space size="small" wrap>
+                      <Dropdown
+                        menu={{
+                          items: [
+                            {
+                              key: 'md',
+                              icon: <DownloadOutlined />,
+                              label: '下载 Markdown',
+                              onClick: downloadMd,
+                            },
+                            {
+                              key: 'docx',
+                              icon: <FileWordOutlined />,
+                              label: exporting ? '导出中…' : '下载 Word',
+                              onClick: exportDocx,
+                            },
+                            {
+                              key: 'print',
+                              icon: <PrinterOutlined />,
+                              label: '打印 / 存为 PDF',
+                              onClick: printReport,
+                            },
+                          ],
+                        }}
                       >
-                        下载
+                        <Button icon={<DownloadOutlined />}>
+                          下载 <DownOutlined />
+                        </Button>
+                      </Dropdown>
+                      <Button
+                        icon={<ShareAltOutlined />}
+                        loading={sharing}
+                        onClick={openShare}
+                      >
+                        分享
                       </Button>
                       <Button
                         type="primary"
@@ -617,7 +713,10 @@ export default function ResearchPage() {
                   )
                 }
               >
-                <MarkdownMessage content={displayMd} />
+                <div className="research-print">
+                  <h1 className="research-print-title">{reportTitle || '研究报告'}</h1>
+                  <MarkdownMessage content={displayMd} />
+                </div>
                 {running && <span className="research-caret">▍</span>}
               </Card>
             )}
@@ -631,6 +730,28 @@ export default function ResearchPage() {
           </div>
         )}
       </div>
+
+      <Modal
+        title="分享研究报告"
+        open={shareOpen}
+        onCancel={() => setShareOpen(false)}
+        footer={[
+          <Button key="revoke" danger onClick={revokeShare}>
+            取消分享
+          </Button>,
+          <Button key="copy" type="primary" onClick={copyShareUrl}>
+            复制链接
+          </Button>,
+        ]}
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
+          公开只读链接，任何人无需登录即可查看这份报告快照（不含你的其他数据）。
+        </Typography.Paragraph>
+        <Input.TextArea value={shareUrl} readOnly autoSize style={{ marginBottom: 8 }} />
+        <Button type="link" href={shareUrl} target="_blank" rel="noreferrer" style={{ paddingLeft: 0 }}>
+          在新标签打开预览 →
+        </Button>
+      </Modal>
     </div>
   )
 }
